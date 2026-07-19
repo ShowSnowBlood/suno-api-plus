@@ -19,7 +19,7 @@ import {
   getTwoCaptchaKey
 } from '@/lib/yescaptcha';
 import { loadCaptchaSettings } from '@/lib/captcha-settings';
-import { resolveSunoProviderModel } from '@/lib/suno-models';
+import { DEFAULT_SUNO_MODEL, resolveSunoProviderModel } from '@/lib/suno-models';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -27,7 +27,7 @@ const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>();
 globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
-export const DEFAULT_MODEL = 'chirp-v3-5';
+export const DEFAULT_MODEL = DEFAULT_SUNO_MODEL;
 
 export interface AudioInfo {
   id: string; // Unique identifier for the audio

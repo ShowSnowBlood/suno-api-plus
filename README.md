@@ -199,11 +199,20 @@ Call `GET /v1/models` to discover the model IDs exposed by this instance. The
 response uses the OpenAI-compatible `list` format and requires the same API
 key as the generation endpoints when API key authentication is enabled.
 
-| Model ID | Role | Availability | Notes |
+Model availability is determined by the selected Suno account's plan and
+upstream permissions. A model listed here may still be rejected upstream when
+that account does not have access to the corresponding version.
+
+| Model ID | Status | Provider model | Notes |
 |---|---|---|---|
-| `suno-music` | Compatibility alias | Recommended | Maps to the default `chirp-v3-5` model; use this value in sub2api and generic OpenAI clients. |
-| `chirp-v3-5` | Suno model | Stable / default | Default model for new generation requests. |
-| `chirp-v3-0` | Suno model | Legacy | Supported only when the selected Suno account still exposes it upstream. |
+| `suno-music` | Current / recommended | `chirp-fenix` | Default alias for the latest supported model, currently Suno V5.5. Use this value in sub2api and generic OpenAI clients. |
+| `suno-v5.5` | Current | `chirp-fenix` | Explicit Suno V5.5 model ID. |
+| `suno-v5` | Stable | `chirp-crow` | Suno V5 model ID. |
+| `suno-v4.5+` | Stable | `chirp-bluejay` | Suno V4.5+ model ID. |
+| `suno-v4.5` | Stable | `chirp-auk` | Suno V4.5 model ID. |
+| `suno-v4` | Legacy | `chirp-v4` | Suno V4 compatibility model ID. |
+| `suno-v3.5` | Legacy | `chirp-v3-5` | Suno V3.5 compatibility model ID. |
+| `suno-v3` | Legacy | `chirp-v3-0` | Suno V3 compatibility model ID. |
 
 Example discovery request:
 
@@ -215,6 +224,8 @@ curl "$SUNO_BASE_URL/models" \
 The `data` entries include standard OpenAI fields (`id`, `object`, `created`,
 and `owned_by`) plus `capabilities` and a `metadata` object with the provider
 model, display label, status, recommendation flag, and optional alias target.
+Raw `chirp-*` provider identifiers remain pass-through compatible, but the
+public `suno-*` IDs above are recommended for downstream integrations.
 
 ### sub2api / OpenAI clients
 

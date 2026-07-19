@@ -14,7 +14,7 @@
     "/v1/models": {
       "get": {
         "summary": "List available Suno models.",
-        "description": "Returns the OpenAI-compatible model catalog. When API key authentication is enabled, send Authorization: Bearer <API_KEY> (or x-api-key). Use the returned id in generation requests.",
+        "description": "Returns the OpenAI-compatible model catalog. When API key authentication is enabled, send Authorization: Bearer <API_KEY> (or x-api-key). Use the returned public id in generation requests. Actual availability depends on the selected Suno account plan and upstream permissions.",
         "tags": ["default"],
         "responses": {
           "200": {
@@ -33,16 +33,96 @@
                       "capabilities": ["music"],
                       "metadata": {
                         "provider": "suno",
-                        "provider_model": "chirp-v3-5",
-                        "label": "Suno Music",
-                        "description": "Recommended OpenAI-compatible alias for the current stable Suno music model.",
-                        "status": "alias",
+                        "provider_model": "chirp-fenix",
+                        "label": "Suno Music (Latest)",
+                        "description": "Recommended OpenAI-compatible alias for the latest Suno music model.",
+                        "status": "current",
                         "recommended": true,
-                        "alias_of": "chirp-v3-5"
+                        "alias_of": "chirp-fenix"
                       }
                     },
                     {
-                      "id": "chirp-v3-5",
+                      "id": "suno-v5.5",
+                      "object": "model",
+                      "created": 0,
+                      "owned_by": "suno-api",
+                      "capabilities": ["music"],
+                      "metadata": {
+                        "provider": "suno",
+                        "provider_model": "chirp-fenix",
+                        "label": "Suno V5.5",
+                        "description": "Latest Suno model with improved expression and personalization.",
+                        "status": "current",
+                        "recommended": false,
+                        "alias_of": "chirp-fenix"
+                      }
+                    },
+                    {
+                      "id": "suno-v5",
+                      "object": "model",
+                      "created": 0,
+                      "owned_by": "suno-api",
+                      "capabilities": ["music"],
+                      "metadata": {
+                        "provider": "suno",
+                        "provider_model": "chirp-crow",
+                        "label": "Suno V5",
+                        "description": "Previous-generation Suno V5 music model.",
+                        "status": "stable",
+                        "recommended": false,
+                        "alias_of": "chirp-crow"
+                      }
+                    },
+                    {
+                      "id": "suno-v4.5+",
+                      "object": "model",
+                      "created": 0,
+                      "owned_by": "suno-api",
+                      "capabilities": ["music"],
+                      "metadata": {
+                        "provider": "suno",
+                        "provider_model": "chirp-bluejay",
+                        "label": "Suno V4.5+",
+                        "description": "Enhanced V4.5 generation model.",
+                        "status": "stable",
+                        "recommended": false,
+                        "alias_of": "chirp-bluejay"
+                      }
+                    },
+                    {
+                      "id": "suno-v4.5",
+                      "object": "model",
+                      "created": 0,
+                      "owned_by": "suno-api",
+                      "capabilities": ["music"],
+                      "metadata": {
+                        "provider": "suno",
+                        "provider_model": "chirp-auk",
+                        "label": "Suno V4.5",
+                        "description": "Stable V4.5 generation model.",
+                        "status": "stable",
+                        "recommended": false,
+                        "alias_of": "chirp-auk"
+                      }
+                    },
+                    {
+                      "id": "suno-v4",
+                      "object": "model",
+                      "created": 0,
+                      "owned_by": "suno-api",
+                      "capabilities": ["music"],
+                      "metadata": {
+                        "provider": "suno",
+                        "provider_model": "chirp-v4",
+                        "label": "Suno V4",
+                        "description": "Legacy V4 generation model.",
+                        "status": "legacy",
+                        "recommended": false,
+                        "alias_of": "chirp-v4"
+                      }
+                    },
+                    {
+                      "id": "suno-v3.5",
                       "object": "model",
                       "created": 0,
                       "owned_by": "suno-api",
@@ -50,14 +130,15 @@
                       "metadata": {
                         "provider": "suno",
                         "provider_model": "chirp-v3-5",
-                        "label": "Chirp v3.5",
-                        "description": "Current stable Suno provider model identifier.",
-                        "status": "stable",
-                        "recommended": false
+                        "label": "Suno V3.5",
+                        "description": "Legacy V3.5 generation model.",
+                        "status": "legacy",
+                        "recommended": false,
+                        "alias_of": "chirp-v3-5"
                       }
                     },
                     {
-                      "id": "chirp-v3-0",
+                      "id": "suno-v3",
                       "object": "model",
                       "created": 0,
                       "owned_by": "suno-api",
@@ -65,10 +146,11 @@
                       "metadata": {
                         "provider": "suno",
                         "provider_model": "chirp-v3-0",
-                        "label": "Chirp v3.0",
-                        "description": "Legacy Suno model; availability depends on the upstream account and service.",
+                        "label": "Suno V3",
+                        "description": "Legacy V3 generation model.",
                         "status": "legacy",
-                        "recommended": false
+                        "recommended": false,
+                        "alias_of": "chirp-v3-0"
                       }
                     }
                   ]
@@ -106,8 +188,9 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Public Suno model ID. Defaults to suno-music (currently Suno V5.5 / chirp-fenix). Raw chirp-* identifiers remain pass-through compatible. Availability depends on the account plan and upstream permissions.",
+                    "default": "suno-music",
+                    "example": "suno-music"
                   },
                   "wait_audio": {
                     "type": "boolean",
@@ -226,8 +309,9 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Public Suno model ID. Defaults to suno-music (currently Suno V5.5 / chirp-fenix). Raw chirp-* identifiers remain pass-through compatible. Availability depends on the account plan and upstream permissions.",
+                    "default": "suno-music",
+                    "example": "suno-music"
                   },
                   "wait_audio": {
                     "type": "boolean",
@@ -309,8 +393,9 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "Model name ,default is chirp-v3-5",
-                    "example": "chirp-v3-5|chirp-v3-0"
+                    "description": "Public Suno model ID. Defaults to suno-music (currently Suno V5.5 / chirp-fenix). Raw chirp-* identifiers remain pass-through compatible. Availability depends on the account plan and upstream permissions.",
+                    "default": "suno-music",
+                    "example": "suno-music"
                   }
                 }
               }
@@ -854,7 +939,7 @@
           },
           "model_name": {
             "type": "string",
-            "description": "suno model name, chirp-v3"
+            "description": "Raw Suno provider model identifier used by the generated audio, for example chirp-fenix."
           },
           "status": {
             "type": "string",
@@ -900,7 +985,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "enum": ["suno-music", "chirp-v3-5", "chirp-v3-0"]
+            "enum": ["suno-music", "suno-v5.5", "suno-v5", "suno-v4.5+", "suno-v4.5", "suno-v4", "suno-v3.5", "suno-v3"]
           },
           "object": {
             "type": "string",
@@ -926,12 +1011,12 @@
             "required": ["provider", "provider_model", "label", "description", "status", "recommended"],
             "properties": {
               "provider": { "type": "string", "example": "suno" },
-              "provider_model": { "type": "string", "example": "chirp-v3-5" },
-              "label": { "type": "string", "example": "Suno Music" },
+              "provider_model": { "type": "string", "example": "chirp-fenix" },
+              "label": { "type": "string", "example": "Suno Music (Latest)" },
               "description": { "type": "string" },
               "status": {
                 "type": "string",
-                "enum": ["alias", "stable", "legacy"]
+                "enum": ["current", "stable", "legacy"]
               },
               "recommended": { "type": "boolean" },
               "alias_of": { "type": "string" }

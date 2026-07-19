@@ -3,14 +3,14 @@
  *
  * Suno's `mv` value is intentionally kept separate from the public model id:
  * clients can use the stable `suno-music` alias while the provider receives
- * the concrete `chirp-v3-5` value. Unknown ids remain pass-through compatible
+ * the concrete `chirp-fenix` value. Unknown ids remain pass-through compatible
  * so newer Suno model versions can be used before this catalog is updated.
  */
 
 export const DEFAULT_OPENAI_MODEL: string = 'suno-music';
-export const DEFAULT_SUNO_MODEL: string = 'chirp-v3-5';
+export const DEFAULT_SUNO_MODEL: string = 'chirp-fenix';
 
-export type SunoModelStatus = 'alias' | 'stable' | 'legacy';
+export type SunoModelStatus = 'current' | 'stable' | 'legacy';
 
 export type SunoModelDefinition = {
   id: string;
@@ -27,30 +27,82 @@ export const SUNO_MODEL_CATALOG = [
   {
     id: 'suno-music',
     providerModel: DEFAULT_SUNO_MODEL,
-    label: 'Suno Music',
-    description: 'Recommended OpenAI-compatible alias for the current stable Suno music model.',
-    status: 'alias',
+    label: 'Suno Music (Latest)',
+    description: 'Recommended OpenAI-compatible alias for the latest Suno music model.',
+    status: 'current',
     recommended: true,
     capabilities: ['music'],
     aliasOf: DEFAULT_SUNO_MODEL,
   },
   {
-    id: 'chirp-v3-5',
-    providerModel: 'chirp-v3-5',
-    label: 'Chirp v3.5',
-    description: 'Current stable Suno provider model identifier.',
+    id: 'suno-v5.5',
+    providerModel: 'chirp-fenix',
+    label: 'Suno V5.5',
+    description: 'Latest Suno model with improved expression and personalization.',
+    status: 'current',
+    recommended: false,
+    capabilities: ['music'],
+    aliasOf: 'chirp-fenix',
+  },
+  {
+    id: 'suno-v5',
+    providerModel: 'chirp-crow',
+    label: 'Suno V5',
+    description: 'Previous-generation Suno V5 music model.',
     status: 'stable',
     recommended: false,
     capabilities: ['music'],
+    aliasOf: 'chirp-crow',
   },
   {
-    id: 'chirp-v3-0',
-    providerModel: 'chirp-v3-0',
-    label: 'Chirp v3.0',
-    description: 'Legacy Suno model; availability depends on the upstream account and service.',
+    id: 'suno-v4.5+',
+    providerModel: 'chirp-bluejay',
+    label: 'Suno V4.5+',
+    description: 'Enhanced V4.5 generation model.',
+    status: 'stable',
+    recommended: false,
+    capabilities: ['music'],
+    aliasOf: 'chirp-bluejay',
+  },
+  {
+    id: 'suno-v4.5',
+    providerModel: 'chirp-auk',
+    label: 'Suno V4.5',
+    description: 'Stable V4.5 generation model.',
+    status: 'stable',
+    recommended: false,
+    capabilities: ['music'],
+    aliasOf: 'chirp-auk',
+  },
+  {
+    id: 'suno-v4',
+    providerModel: 'chirp-v4',
+    label: 'Suno V4',
+    description: 'Legacy V4 generation model.',
     status: 'legacy',
     recommended: false,
     capabilities: ['music'],
+    aliasOf: 'chirp-v4',
+  },
+  {
+    id: 'suno-v3.5',
+    providerModel: 'chirp-v3-5',
+    label: 'Suno V3.5',
+    description: 'Legacy V3.5 generation model.',
+    status: 'legacy',
+    recommended: false,
+    capabilities: ['music'],
+    aliasOf: 'chirp-v3-5',
+  },
+  {
+    id: 'suno-v3',
+    providerModel: 'chirp-v3-0',
+    label: 'Suno V3',
+    description: 'Legacy V3 generation model.',
+    status: 'legacy',
+    recommended: false,
+    capabilities: ['music'],
+    aliasOf: 'chirp-v3-0',
   },
 ] as const satisfies readonly SunoModelDefinition[];
 

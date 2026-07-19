@@ -132,9 +132,14 @@ const taskFilterLabels: Record<TaskFilter, string> = {
 };
 
 const modelDescriptions: Record<string, string> = {
-  'suno-music': '推荐的 OpenAI 兼容别名，自动映射到当前稳定模型。',
-  'chirp-v3-5': '当前默认的 Suno 上游音乐生成模型。',
-  'chirp-v3-0': '旧版模型，是否可用取决于 Suno 账号和上游服务。',
+  'suno-music': '推荐的 OpenAI 兼容别名，自动使用当前最新模型。',
+  'suno-v5.5': '当前最新模型，上游标识为 chirp-fenix；需要账号具备对应权限。',
+  'suno-v5': 'Suno V5，上游标识为 chirp-crow。',
+  'suno-v4.5+': '增强版 V4.5，上游标识为 chirp-bluejay。',
+  'suno-v4.5': 'Suno V4.5，上游标识为 chirp-auk。',
+  'suno-v4': '旧版 V4，是否可用取决于 Suno 账号。',
+  'suno-v3.5': '旧版 V3.5，是否可用取决于 Suno 账号。',
+  'suno-v3': '旧版 V3，是否可用取决于 Suno 账号。',
 };
 
 const TASKS_PER_PAGE = 8;
@@ -1268,7 +1273,7 @@ export default function AdminDashboard() {
             <form className={styles.generateForm} onSubmit={generate}>
               <label className={styles.field}><span className={styles.fieldLabel}>提示词 <span className={styles.fieldHint}>描述风格、情绪、乐器和节奏</span></span><textarea className={styles.textarea} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：夜晚城市街头的爵士鼓点，温暖的电钢琴，适合专注工作的器乐曲…" /></label>
               <div className={styles.generateOptions}>
-                <label className={styles.field}><span className={styles.fieldLabel}>生成模型</span><select className={styles.select} value={generationModel} onChange={(event) => setGenerationModel(event.target.value)}>{SUNO_MODEL_CATALOG.map((model) => <option value={model.id} key={model.id}>{model.label}{model.recommended ? '（推荐）' : model.status === 'legacy' ? '（旧版）' : ''}</option>)}</select></label>
+                <label className={styles.field}><span className={styles.fieldLabel}>生成模型</span><select className={styles.select} value={generationModel} onChange={(event) => setGenerationModel(event.target.value)}>{SUNO_MODEL_CATALOG.map((model) => <option value={model.id} key={model.id}>{model.label}{model.recommended ? '（推荐）' : model.status === 'current' ? '（最新）' : model.status === 'legacy' ? '（旧版）' : ''}</option>)}</select></label>
                 <label className={styles.field}><span className={styles.fieldLabel}>优先池级别</span><select className={styles.select} value={generationPool} onChange={(event) => setGenerationPool(event.target.value as 'basic' | 'super' | 'heavy')}><option value="basic">basic（标准）</option><option value="super">super（高容量）</option><option value="heavy">heavy（最高容量）</option></select></label>
                 <label className={styles.checkboxLabel}><input className={styles.checkbox} type="checkbox" checked={instrumental} onChange={(event) => setInstrumental(event.target.checked)} />纯音乐</label>
               </div>
@@ -1373,7 +1378,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>类型</span><strong>{model.id === model.providerModel ? '上游模型' : '兼容别名'}</strong></div>
                   <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>上游映射</span><code>{model.providerModel}</code></div>
-                  <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>状态</span><span className={`${styles.badge} ${model.recommended ? styles.badgeGreen : model.status === 'legacy' ? styles.badgeAmber : styles.badgeBlue}`}>{model.recommended ? '推荐' : model.status === 'legacy' ? '旧版' : '稳定'}</span></div>
+                  <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>状态</span><span className={`${styles.badge} ${model.recommended || model.status === 'current' ? styles.badgeGreen : model.status === 'legacy' ? styles.badgeAmber : styles.badgeBlue}`}>{model.recommended ? '推荐' : model.status === 'current' ? '最新' : model.status === 'legacy' ? '旧版' : '稳定'}</span></div>
                 </div>
               ))}
             </div>

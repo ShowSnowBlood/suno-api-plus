@@ -199,11 +199,19 @@ curl "$SUNO_BASE_URL/chat/completions" \
 OpenAI 兼容的 `list` 格式；后台启用接口密钥后，需要使用与生成接口相同的
 API Key 鉴权。
 
-| 模型 ID | 类型 | 状态 | 说明 |
+模型实际可用性取决于所选 Suno 账号的套餐和上游权限。即使模型出现在目录中，
+账号未获得对应版本权限时，上游仍可能拒绝生成请求。
+
+| 模型 ID | 状态 | 上游模型 | 说明 |
 |---|---|---|---|
-| `suno-music` | 兼容别名 | 推荐 | 服务端映射到默认模型 `chirp-v3-5`；sub2api 和通用 OpenAI 客户端建议使用此值。 |
-| `chirp-v3-5` | Suno 模型 | 稳定 / 默认 | 新生成请求使用的默认模型。 |
-| `chirp-v3-0` | Suno 模型 | 旧版 | 是否可用取决于当前选择的 Suno 账号是否仍由上游提供。 |
+| `suno-music` | 当前 / 推荐 | `chirp-fenix` | 最新支持模型的默认别名，当前对应 Suno V5.5；sub2api 和通用 OpenAI 客户端建议使用此值。 |
+| `suno-v5.5` | 当前 | `chirp-fenix` | 明确指定 Suno V5.5。 |
+| `suno-v5` | 稳定 | `chirp-crow` | Suno V5 模型 ID。 |
+| `suno-v4.5+` | 稳定 | `chirp-bluejay` | Suno V4.5+ 模型 ID。 |
+| `suno-v4.5` | 稳定 | `chirp-auk` | Suno V4.5 模型 ID。 |
+| `suno-v4` | 旧版 | `chirp-v4` | Suno V4 兼容模型 ID。 |
+| `suno-v3.5` | 旧版 | `chirp-v3-5` | Suno V3.5 兼容模型 ID。 |
+| `suno-v3` | 旧版 | `chirp-v3-0` | Suno V3 兼容模型 ID。 |
 
 获取模型列表示例：
 
@@ -215,6 +223,8 @@ curl "$SUNO_BASE_URL/models" \
 `data` 中每个条目包含 OpenAI 标准字段（`id`、`object`、`created`、
 `owned_by`），并额外提供 `capabilities` 和 `metadata`，其中包含上游模型、
 显示名称、状态、推荐标记以及可选的别名目标。
+原始 `chirp-*` 上游标识仍支持透传，但下游集成建议使用上表中的公开
+`suno-*` 模型 ID。
 
 ### sub2api / 第三方客户端
 
