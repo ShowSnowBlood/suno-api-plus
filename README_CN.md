@@ -75,11 +75,14 @@ docker compose up -d
 
 | 地址 | 说明 |
 |---|---|
-| `http://服务器IP:3000/admin` | 管理后台 |
-| `http://服务器IP:3000/docs` | 接口文档（Swagger） |
-| `http://服务器IP:3000/v1` | OpenAI 兼容 Base URL |
+| `https://suno.38-47-121-78.sslip.io/admin` | 当前线上管理后台 |
+| `https://suno.38-47-121-78.sslip.io/docs` | 当前线上接口文档 |
+| `https://suno.38-47-121-78.sslip.io/v1` | 当前线上 OpenAI Base URL |
 
 后台登录密码 = `.env` 里的 `ADMIN_PASSWORD`。
+
+默认 Compose 只监听 `127.0.0.1:3000`，生产环境必须通过 HTTPS
+反向代理访问。搭建步骤见 [deploy/HTTPS.md](./deploy/HTTPS.md)。
 
 ---
 
@@ -149,8 +152,10 @@ npm run verify-cookie
 ### Base URL
 
 ```text
-http://<host>:3000/v1
+https://<你的域名>/v1
 ```
+
+当前线上地址：`https://suno.38-47-121-78.sslip.io/v1`
 
 ### 鉴权
 
@@ -170,11 +175,13 @@ x-api-key: sk-suno-xxxxxxxx
 
 ```bash
 # 模型列表
-curl http://127.0.0.1:3000/v1/models \
+export SUNO_BASE_URL=https://suno.38-47-121-78.sslip.io/v1
+
+curl "$SUNO_BASE_URL/models" \
   -H "Authorization: Bearer $API_KEY"
 
 # 生成音乐（chat completions）
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl "$SUNO_BASE_URL/chat/completions" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -190,7 +197,7 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 
 | 配置项 | 值 |
 |---|---|
-| API Base | `http://你的IP:3000/v1` |
+| API Base | `https://suno.38-47-121-78.sslip.io/v1` |
 | API Key | 后台「接口密钥」里生成的 key |
 | 模型 | `suno-music` |
 

@@ -10,5 +10,6 @@ services:
       - ./public:/app/public
       - ./data:/app/data
     ports:
-      - "3000:3000"
+      # Keep the app behind the HTTPS reverse proxy in production.
+      - "127.0.0.1:3000:3000"
     env_file: ".env"

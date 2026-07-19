@@ -73,11 +73,20 @@ docker compose up -d
 
 Open:
 
-- Admin: `http://localhost:3000/admin`
-- API docs: `http://localhost:3000/docs`
-- OpenAI base: `http://localhost:3000/v1`
+- Local admin: `http://localhost:3000/admin`
+- Local API docs: `http://localhost:3000/docs`
+- Production OpenAI base: `https://<your-domain>/v1`
+
+Current hosted instance:
+
+- Admin: `https://suno.38-47-121-78.sslip.io/admin`
+- API docs: `https://suno.38-47-121-78.sslip.io/docs`
+- OpenAI base: `https://suno.38-47-121-78.sslip.io/v1`
 
 Admin password = `ADMIN_PASSWORD`.
+
+The default Compose binding is `127.0.0.1:3000`, so production traffic must
+go through an HTTPS reverse proxy. See [deploy/HTTPS.md](./deploy/HTTPS.md).
 
 ---
 
@@ -145,8 +154,10 @@ Account tiers: `basic` / `super` / `heavy`.
 ### Base URL
 
 ```text
-http://<host>:3000/v1
+https://<your-domain>/v1
 ```
+
+Hosted instance: `https://suno.38-47-121-78.sslip.io/v1`
 
 ### Auth
 
@@ -165,10 +176,12 @@ x-api-key: sk-suno-xxxxxxxx
 ### Examples
 
 ```bash
-curl http://127.0.0.1:3000/v1/models \
+export SUNO_BASE_URL=https://suno.38-47-121-78.sslip.io/v1
+
+curl "$SUNO_BASE_URL/models" \
   -H "Authorization: Bearer $API_KEY"
 
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl "$SUNO_BASE_URL/chat/completions" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -184,7 +197,7 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 
 | Field | Value |
 |---|---|
-| Base URL | `http://<host>:3000/v1` |
+| Base URL | `https://suno.38-47-121-78.sslip.io/v1` |
 | API Key | your configured key |
 | Model | `suno-music` |
 

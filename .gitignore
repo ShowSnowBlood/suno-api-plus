@@ -37,6 +37,8 @@ yarn-error.log*
 .env
 _ssh_pw.txt
 *_created_api_key.txt
+suno-cookie-extension.zip
+*.status
 
 # local deploy helpers / temp scripts (do not publish)
 _*.py
