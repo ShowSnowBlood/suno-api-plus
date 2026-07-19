@@ -5,6 +5,7 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
+  Boxes,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -35,6 +36,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
+import { DEFAULT_OPENAI_MODEL, SUNO_MODEL_CATALOG } from '@/lib/suno-models';
 import AdminShell from './components/AdminShell';
 import styles from './AdminDashboard.module.css';
 
@@ -100,7 +102,7 @@ type ApiKeyStatus = {
   updatedAt?: string;
 };
 
-type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey';
+type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey' | 'models';
 type PoolFilter = 'all' | 'basic' | 'super' | 'heavy';
 type AccountStatusFilter = 'all' | PoolAccount['status'];
 type TaskFilter = 'all' | 'active' | 'complete' | 'error';
@@ -127,6 +129,12 @@ const taskFilterLabels: Record<TaskFilter, string> = {
   active: '进行中',
   complete: '已完成',
   error: '失败',
+};
+
+const modelDescriptions: Record<string, string> = {
+  'suno-music': '推荐的 OpenAI 兼容别名，自动映射到当前稳定模型。',
+  'chirp-v3-5': '当前默认的 Suno 上游音乐生成模型。',
+  'chirp-v3-0': '旧版模型，是否可用取决于 Suno 账号和上游服务。',
 };
 
 const TASKS_PER_PAGE = 8;
@@ -182,6 +190,7 @@ export default function AdminDashboard() {
   const [prompt, setPrompt] = useState('');
   const [instrumental, setInstrumental] = useState(false);
   const [generationPool, setGenerationPool] = useState<'basic' | 'super' | 'heavy'>('basic');
+  const [generationModel, setGenerationModel] = useState(DEFAULT_OPENAI_MODEL);
   const [accountName, setAccountName] = useState('');
   const [accountCookie, setAccountCookie] = useState('');
   const [accountTier, setAccountTier] = useState<'basic' | 'super' | 'heavy'>('basic');
@@ -240,7 +249,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey'];
+    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey', 'models'];
     const syncFromLocation = () => {
       const requestedView = window.location.hash.replace(/^#/, '') as View;
       if (views.includes(requestedView)) setActiveView(requestedView);
@@ -434,7 +443,7 @@ export default function AdminDashboard() {
       const response = await fetch('/api/admin/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, make_instrumental: instrumental, wait_audio: false, pool: generationPool }),
+        body: JSON.stringify({ prompt, make_instrumental: instrumental, wait_audio: false, pool: generationPool, model: generationModel }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '生成请求失败。');
@@ -1259,6 +1268,7 @@ export default function AdminDashboard() {
             <form className={styles.generateForm} onSubmit={generate}>
               <label className={styles.field}><span className={styles.fieldLabel}>提示词 <span className={styles.fieldHint}>描述风格、情绪、乐器和节奏</span></span><textarea className={styles.textarea} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：夜晚城市街头的爵士鼓点，温暖的电钢琴，适合专注工作的器乐曲…" /></label>
               <div className={styles.generateOptions}>
+                <label className={styles.field}><span className={styles.fieldLabel}>生成模型</span><select className={styles.select} value={generationModel} onChange={(event) => setGenerationModel(event.target.value)}>{SUNO_MODEL_CATALOG.map((model) => <option value={model.id} key={model.id}>{model.label}{model.recommended ? '（推荐）' : model.status === 'legacy' ? '（旧版）' : ''}</option>)}</select></label>
                 <label className={styles.field}><span className={styles.fieldLabel}>优先池级别</span><select className={styles.select} value={generationPool} onChange={(event) => setGenerationPool(event.target.value as 'basic' | 'super' | 'heavy')}><option value="basic">basic（标准）</option><option value="super">super（高容量）</option><option value="heavy">heavy（最高容量）</option></select></label>
                 <label className={styles.checkboxLabel}><input className={styles.checkbox} type="checkbox" checked={instrumental} onChange={(event) => setInstrumental(event.target.checked)} />纯音乐</label>
               </div>
@@ -1281,6 +1291,7 @@ export default function AdminDashboard() {
               <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>请求信息</h2><p className={styles.panelDescription}>生成接口的当前连接状态</p></div></div>
               <div className={styles.detailList}>
                 <div><span>接口地址</span><code>{apiEndpoint}</code></div>
+                <div><span>生成模型</span><code>{generationModel}</code></div>
                 <div><span>当前账号</span><strong>{activeAccounts} 个可用</strong></div>
                 <div><span>自动刷新</span><strong>每 15 秒</strong></div>
               </div>
@@ -1325,6 +1336,70 @@ export default function AdminDashboard() {
             </div>
           ) : null}
         </section>
+      </>
+    );
+  }
+
+  function renderModels() {
+    const discoveryCommand = `curl "${apiEndpoint}/models" -H "Authorization: Bearer $API_KEY"`;
+    return (
+      <>
+        {renderPageHeader(
+          '模型目录',
+          '下游客户端可通过 OpenAI 兼容接口自动发现这些模型。',
+          <button className={styles.button} type="button" onClick={() => copyText(`${apiEndpoint}/models`, 'models-endpoint')}>
+            {copiedCommand === 'models-endpoint' ? <CopyCheck size={15} /> : <Copy size={15} />}
+            {copiedCommand === 'models-endpoint' ? '已复制' : '复制模型地址'}
+          </button>,
+        )}
+        <div className={styles.modelCatalogLayout}>
+          <section className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div><h2 className={styles.panelTitle}>可调用模型</h2><p className={styles.panelDescription}>目录与 `/v1/models` 返回值保持一致</p></div>
+              <span className={`${styles.badge} ${styles.badgeGreen}`}>{SUNO_MODEL_CATALOG.length} 个模型</span>
+            </div>
+            <div className={styles.modelTable} role="table" aria-label="Suno 模型目录">
+              <div className={styles.modelTableHeader} role="row">
+                <span role="columnheader">模型 ID</span>
+                <span role="columnheader">类型</span>
+                <span role="columnheader">上游映射</span>
+                <span role="columnheader">状态</span>
+              </div>
+              {SUNO_MODEL_CATALOG.map((model) => (
+                <div className={styles.modelTableRow} role="row" key={model.id}>
+                  <div className={styles.modelIdentity} role="cell">
+                    <span className={styles.modelIcon}><Boxes size={16} /></span>
+                    <span><code>{model.id}</code><small>{modelDescriptions[model.id] || model.description}</small></span>
+                  </div>
+                  <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>类型</span><strong>{model.id === model.providerModel ? '上游模型' : '兼容别名'}</strong></div>
+                  <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>上游映射</span><code>{model.providerModel}</code></div>
+                  <div className={styles.modelCell} role="cell"><span className={styles.mobileFieldLabel}>状态</span><span className={`${styles.badge} ${model.recommended ? styles.badgeGreen : model.status === 'legacy' ? styles.badgeAmber : styles.badgeBlue}`}>{model.recommended ? '推荐' : model.status === 'legacy' ? '旧版' : '稳定'}</span></div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <aside className={`${styles.panel} ${styles.modelDiscoveryPanel}`}>
+            <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>下游发现</h2><p className={styles.panelDescription}>兼容 OpenAI Models API</p></div></div>
+            <div className={styles.panelBody}>
+              <button className={styles.endpointCopyRow} type="button" onClick={() => copyText(`${apiEndpoint}/models`, 'models-list')}>
+                <Terminal size={15} /><code>{apiEndpoint}/models</code>{copiedCommand === 'models-list' ? <CopyCheck size={15} /> : <Copy size={15} />}
+              </button>
+              <div className={styles.commandBlock}>
+                <code>{discoveryCommand}</code>
+                <button className={styles.iconButton} type="button" title="复制请求命令" aria-label="复制模型列表请求命令" onClick={() => copyText(discoveryCommand, 'models-curl')}>
+                  {copiedCommand === 'models-curl' ? <CopyCheck size={15} /> : <Copy size={15} />}
+                </button>
+              </div>
+              <div className={styles.integrationNote}>
+                <strong>客户端配置</strong>
+                <div><span>推荐模型</span><code>{DEFAULT_OPENAI_MODEL}</code></div>
+                <div><span>列表接口</span><code>GET /v1/models</code></div>
+                <div><span>单个模型</span><code>GET /v1/models/{'{model}'}</code></div>
+              </div>
+              <p className={styles.settingsHint}>未知的非空模型名称仍会透传给 Suno，便于兼容上游后续新增版本；模型目录只列出当前已确认的选项。</p>
+            </div>
+          </aside>
+        </div>
       </>
     );
   }
@@ -1513,7 +1588,7 @@ export default function AdminDashboard() {
               <div className={styles.settingsStatusRow}><span>更新</span><strong>{formatDate(status?.updatedAt)}</strong></div>
             </div>
             <button className={styles.endpointCopyRow} type="button" onClick={() => copyText(apiEndpoint, 'api-base')}><Terminal size={15} /><code>{apiEndpoint}</code>{copiedCommand === 'api-base' ? <CopyCheck size={15} /> : <Copy size={15} />}</button>
-            <p className={styles.settingsHint}>Base URL 以 `/v1` 结尾，模型名称使用 `suno-music`。</p>
+            <p className={styles.settingsHint}>Base URL 以 `/v1` 结尾；下游可通过 `/v1/models` 自动读取模型目录。</p>
           </aside>
           <section className={`${styles.panel} ${styles.settingsMain}`}>
             <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>配置 API Key</h2><p className={styles.panelDescription}>留空保留当前密钥，输入 CLEAR 可清空。</p></div></div>
@@ -1529,7 +1604,7 @@ export default function AdminDashboard() {
                 <div className={`${styles.field} ${styles.fieldFull}`}><div className={styles.fieldLabel}>自定义密钥</div><div className={styles.passwordField}><input className={styles.input} type={apiKeyForm.showKey ? 'text' : 'password'} value={apiKeyForm.apiKey} onChange={(e) => setApiKeyForm((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder={status?.apiKeyMasked ? `当前 ${status.apiKeyMasked}` : 'sk-suno-...'} autoComplete="off" /><button className={styles.iconButton} type="button" onClick={() => setApiKeyForm((prev) => ({ ...prev, showKey: !prev.showKey }))} aria-label={apiKeyForm.showKey ? '隐藏密钥' : '显示密钥'}>{apiKeyForm.showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></div>
                 <div className={styles.buttonRow}><button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={apiKeySaving}><Check size={15} />{apiKeySaving ? '保存中…' : '保存配置'}</button><button className={styles.button} type="button" onClick={generateNewApiKey} disabled={apiKeySaving}><KeyRound size={15} />生成新密钥</button></div>
               </form>
-              <div className={styles.integrationNote}><strong>sub2api 配置</strong><div><span>Base URL</span><code>{apiEndpoint}</code></div><div><span>API Key</span><code>{status?.apiKeyMasked || '使用上方密钥'}</code></div><div><span>模型</span><code>suno-music</code></div></div>
+              <div className={styles.integrationNote}><strong>sub2api 配置</strong><div><span>Base URL</span><code>{apiEndpoint}</code></div><div><span>API Key</span><code>{status?.apiKeyMasked || '使用上方密钥'}</code></div><div><span>推荐模型</span><code>{DEFAULT_OPENAI_MODEL}</code></div><div><span>模型列表</span><code>GET /v1/models</code></div></div>
             </div>
           </section>
         </div>
@@ -1609,6 +1684,7 @@ export default function AdminDashboard() {
         {activeView === 'tasks' && renderTasks()}
         {activeView === 'apikey' && renderApiKey()}
         {activeView === 'captcha' && renderCaptcha()}
+        {activeView === 'models' && renderModels()}
       </div>
       {renderAuthWizard()}
     </AdminShell>

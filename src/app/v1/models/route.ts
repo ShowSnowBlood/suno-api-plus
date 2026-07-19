@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DEFAULT_MODEL } from '@/lib/SunoApi';
+import { listOpenAIModelRecords } from '@/lib/suno-models';
 import { corsHeaders } from '@/lib/utils';
 import { requireApiKey } from '@/lib/api-auth';
 
@@ -11,9 +11,10 @@ export async function GET(request: NextRequest) {
   const created = Math.floor(Date.now() / 1000);
   return NextResponse.json({
     object: 'list',
-    data: [
-      { id: DEFAULT_MODEL, object: 'model', created, owned_by: 'suno-api', capabilities: ['music'] },
-      { id: 'suno-music', object: 'model', created, owned_by: 'suno-api', capabilities: ['music'] },
-    ],
+    data: listOpenAIModelRecords(created),
   }, { headers: corsHeaders });
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
 }

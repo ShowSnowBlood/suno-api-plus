@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_MODEL, withSunoAccount } from '@/lib/SunoApi';
+import { withSunoAccount } from '@/lib/SunoApi';
 import { accountTier } from '@/lib/account-pool';
 import { audioToText, promptFromMessages, tokenEstimate } from '@/lib/openai-compatible';
+import { resolveOpenAIModel } from '@/lib/suno-models';
 import { corsHeaders } from '@/lib/utils';
 import { requireApiKey } from '@/lib/api-auth';
 
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
   const prompt = promptFromMessages(body.messages);
   if (!prompt) return NextResponse.json({ error: { message: 'A user message is required.', type: 'invalid_request_error' } }, { status: 400, headers: corsHeaders });
 
-  const model = typeof body.model === 'string' ? body.model : DEFAULT_MODEL;
+  const model = resolveOpenAIModel(body.model);
   const requestId = `chatcmpl-${randomUUID()}`;
   try {
     const audios = await withSunoAccount(accountTier(body.pool || request.headers.get('x-suno-pool')), (api) => api.generate(

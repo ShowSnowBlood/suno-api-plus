@@ -19,6 +19,7 @@ import {
   getTwoCaptchaKey
 } from '@/lib/yescaptcha';
 import { loadCaptchaSettings } from '@/lib/captcha-settings';
+import { resolveSunoProviderModel } from '@/lib/suno-models';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -927,7 +928,7 @@ export class SunoApi {
     await this.keepAlive();
     const payload: any = {
       make_instrumental: make_instrumental,
-      mv: model || DEFAULT_MODEL,
+      mv: resolveSunoProviderModel(model),
       prompt: '',
       generation_type: 'TEXT',
       continue_at: continue_at,

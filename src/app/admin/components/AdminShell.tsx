@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import {
   Activity,
   BookOpen,
+  Boxes,
   Check,
   ChevronRight,
   Copy,
@@ -23,7 +24,7 @@ import {
 } from 'lucide-react';
 import styles from './AdminShell.module.css';
 
-export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'captcha' | 'apikey';
+export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'captcha' | 'apikey' | 'models';
 
 export interface AdminShellProps {
   activeView: AdminView;
@@ -85,6 +86,7 @@ const viewMeta: Record<AdminView, { section: string; title: string; description:
   accounts: { section: '账号资源', title: '账号池', description: '维护分级账号、并发与配额' },
   captcha: { section: '安全与接入', title: '验证码配置', description: '管理验证服务与故障切换' },
   apikey: { section: '安全与接入', title: '接口密钥', description: '管理 OpenAI 兼容接口访问' },
+  models: { section: '开发者', title: '模型目录', description: '查看可发现的模型与上游映射' },
 };
 
 export default function AdminShell({
@@ -202,6 +204,16 @@ export default function AdminShell({
               开发者
             </h2>
             <div className={styles.navItems}>
+              <button
+                className={`${styles.navItem} ${activeView === 'models' ? styles.navItemActive : ''}`}
+                type="button"
+                aria-current={activeView === 'models' ? 'page' : undefined}
+                onClick={() => selectView('models')}
+              >
+                <Boxes size={17} strokeWidth={1.9} aria-hidden="true" />
+                <span>模型目录</span>
+                {activeView === 'models' && <ChevronRight className={styles.navChevron} size={14} aria-hidden="true" />}
+              </button>
               <a className={styles.navItem} href="/docs" target="_blank" rel="noreferrer">
                 <BookOpen size={17} strokeWidth={1.9} aria-hidden="true" />
                 <span>接口文档</span>

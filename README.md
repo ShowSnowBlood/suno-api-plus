@@ -193,6 +193,29 @@ curl "$SUNO_BASE_URL/chat/completions" \
   }'
 ```
 
+### Available models
+
+Call `GET /v1/models` to discover the model IDs exposed by this instance. The
+response uses the OpenAI-compatible `list` format and requires the same API
+key as the generation endpoints when API key authentication is enabled.
+
+| Model ID | Role | Availability | Notes |
+|---|---|---|---|
+| `suno-music` | Compatibility alias | Recommended | Maps to the default `chirp-v3-5` model; use this value in sub2api and generic OpenAI clients. |
+| `chirp-v3-5` | Suno model | Stable / default | Default model for new generation requests. |
+| `chirp-v3-0` | Suno model | Legacy | Supported only when the selected Suno account still exposes it upstream. |
+
+Example discovery request:
+
+```bash
+curl "$SUNO_BASE_URL/models" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+The `data` entries include standard OpenAI fields (`id`, `object`, `created`,
+and `owned_by`) plus `capabilities` and a `metadata` object with the provider
+model, display label, status, recommendation flag, and optional alias target.
+
 ### sub2api / OpenAI clients
 
 | Field | Value |
