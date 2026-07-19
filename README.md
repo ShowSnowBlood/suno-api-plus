@@ -240,6 +240,11 @@ public `suno-*` IDs above are recommended for downstream integrations.
 | `billing_mode` | `per_request` |
 | `per_request_price` | `0.48` with the defaults below |
 | Group `rate_multiplier` | `1` by default |
+| Upstream declared multiplier | Automatically follows the admin billing multiplier |
+
+The Sub2API upstream multiplier probe is supported at `GET /v1/sub2api/billing`.
+After refreshing the upstream account, Sub2API displays the declared value such
+as `1x` or `1.5x` instead of `unsupported`.
 
 Optional pool header:
 
@@ -283,6 +288,17 @@ downstream client can read the active settings and calculated summary:
 curl "$SUNO_BASE_URL/billing" \
   -H "Authorization: Bearer $API_KEY"
 ```
+
+Sub2API upstream multiplier probe:
+
+```bash
+curl "$SUNO_BASE_URL/sub2api/billing" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+The compatibility response uses `billing_scope=token` because Sub2API requires
+that literal value. Actual music generation billing remains `per_request` with
+the configured `per_request_price`.
 
 The admin API uses the signed-in `suno_admin_session` cookie:
 

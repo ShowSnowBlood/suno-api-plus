@@ -239,6 +239,11 @@ curl "$SUNO_BASE_URL/models" \
 | `billing_mode` | `per_request` |
 | `per_request_price` | `0.48`（默认配置） |
 | 分组 `rate_multiplier` | `1`（默认配置） |
+| 上游声明倍率 | 自动读取后台「积分与倍率」中的计费倍率 |
+
+本项目支持 Sub2API 的上游倍率探测协议。Sub2API 请求
+`GET /v1/sub2api/billing` 后会显示 `1x`、`1.5x` 等实际倍率，不再显示
+「不支持」。修改后台计费倍率后，刷新 Sub2API 上游账号即可同步。
 
 可选池选择请求头：
 
@@ -280,6 +285,16 @@ x-suno-pool: basic
 curl "$SUNO_BASE_URL/billing" \
   -H "Authorization: Bearer $API_KEY"
 ```
+
+Sub2API 上游倍率探测：
+
+```bash
+curl "$SUNO_BASE_URL/sub2api/billing" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+该兼容端点按 Sub2API 协议固定声明 `billing_scope=token`；音乐生成的实际
+渠道计费仍使用 `billing_mode=per_request` 和 `per_request_price`。
 
 管理接口使用已登录后台的 `suno_admin_session` Cookie：
 

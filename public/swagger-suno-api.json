@@ -181,6 +181,22 @@
         }
       }
     },
+    "/v1/sub2api/billing": {
+      "get": {
+        "summary": "Declare the upstream rate multiplier to Sub2API.",
+        "description": "Sub2API compatibility probe. It exposes the active rateMultiplier using the schema required by Sub2API. This declaration does not change the per-request generation charge.",
+        "tags": ["billing"],
+        "security": [{ "BearerAuth": [] }, { "ApiKeyAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current upstream multiplier declaration.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/sub2api_key_billing" } } }
+          },
+          "401": { "description": "API key required or invalid." },
+          "500": { "description": "Billing multiplier could not be loaded." }
+        }
+      }
+    },
     "/api/admin/billing": {
       "get": {
         "summary": "Get billing settings for the admin panel.",
@@ -519,6 +535,20 @@
         "type": "object",
         "required": ["object", "settings", "summary"],
         "properties": { "object": { "type": "string", "enum": ["billing_settings"] }, "settings": { "$ref": "#/components/schemas/billing_settings" }, "summary": { "$ref": "#/components/schemas/billing_summary" } }
+      },
+      "sub2api_key_billing": {
+        "type": "object",
+        "required": ["object", "schema_version", "billing_scope", "group_rate_multiplier", "resolved_rate_multiplier", "peak_rate_enabled", "effective_rate_multiplier", "observed_at"],
+        "properties": {
+          "object": { "type": "string", "enum": ["sub2api.key_billing"] },
+          "schema_version": { "type": "integer", "enum": [1] },
+          "billing_scope": { "type": "string", "enum": ["token"], "description": "Compatibility value required by the Sub2API probe." },
+          "group_rate_multiplier": { "type": "number", "example": 1 },
+          "resolved_rate_multiplier": { "type": "number", "example": 1 },
+          "peak_rate_enabled": { "type": "boolean", "example": false },
+          "effective_rate_multiplier": { "type": "number", "example": 1 },
+          "observed_at": { "type": "string", "format": "date-time" }
+        }
       },
       "billing_admin_save_response": {
         "type": "object",
