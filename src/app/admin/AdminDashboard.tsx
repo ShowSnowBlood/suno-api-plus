@@ -4,31 +4,30 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
-  BookOpen,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CircleDollarSign,
   ClipboardPaste,
   Cookie,
   Copy,
+  CopyCheck,
   Download,
   ExternalLink,
   Eye,
   EyeOff,
-  Gauge,
   Link2,
+  ListMusic,
   Mail,
   KeyRound,
-  LayoutDashboard,
-  LogOut,
-  Menu,
   Music2,
   Plus,
   Power,
   PowerOff,
   RefreshCw,
   RotateCw,
-  ServerCog,
+  Search,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -36,6 +35,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
+import AdminShell from './components/AdminShell';
 import styles from './AdminDashboard.module.css';
 
 type Song = {
@@ -100,8 +100,10 @@ type ApiKeyStatus = {
   updatedAt?: string;
 };
 
-type View = 'overview' | 'accounts' | 'generate' | 'captcha' | 'apikey';
+type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey';
 type PoolFilter = 'all' | 'basic' | 'super' | 'heavy';
+type AccountStatusFilter = 'all' | PoolAccount['status'];
+type TaskFilter = 'all' | 'active' | 'complete' | 'error';
 type AuthMethod = 'extension' | 'link' | 'password' | 'manual';
 type AuthStep = 1 | 2 | 3;
 
@@ -112,13 +114,22 @@ const tierLabels: Record<PoolFilter, string> = {
   heavy: 'heavy',
 };
 
-const viewLabels: Record<View, string> = {
-  overview: '仪表盘',
-  accounts: '账号池',
-  generate: '生成任务',
-  apikey: '接口密钥',
-  captcha: '验证码配置',
+const accountStatusLabels: Record<AccountStatusFilter, string> = {
+  all: '全部状态',
+  active: '正常',
+  cooling: '冷却中',
+  expired: '已过期',
+  disabled: '已停用',
 };
+
+const taskFilterLabels: Record<TaskFilter, string> = {
+  all: '全部任务',
+  active: '进行中',
+  complete: '已完成',
+  error: '失败',
+};
+
+const TASKS_PER_PAGE = 8;
 
 function formatDate(value?: string | null) {
   if (!value) return '暂无记录';
@@ -191,6 +202,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
   const [activeView, setActiveView] = useState<View>('overview');
   const [poolFilter, setPoolFilter] = useState<PoolFilter>('all');
+  const [accountStatusFilter, setAccountStatusFilter] = useState<AccountStatusFilter>('all');
+  const [accountQuery, setAccountQuery] = useState('');
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskPage, setTaskPage] = useState(1);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apiBase, setApiBase] = useState('--');
@@ -222,6 +238,30 @@ export default function AdminDashboard() {
       document.body.style.overflow = previousOverflow;
     };
   }, []);
+
+  useEffect(() => {
+    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey'];
+    const syncFromLocation = () => {
+      const requestedView = window.location.hash.replace(/^#/, '') as View;
+      if (views.includes(requestedView)) setActiveView(requestedView);
+    };
+    syncFromLocation();
+    window.addEventListener('hashchange', syncFromLocation);
+    return () => window.removeEventListener('hashchange', syncFromLocation);
+  }, []);
+
+  useEffect(() => {
+    if (!showAuthWizard) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || accountBusy || verifyingCookie) return;
+      setShowAuthWizard(false);
+      setAuthStep(1);
+      setVerifyResult('');
+      setCopiedCommand('');
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [accountBusy, showAuthWizard, verifyingCookie]);
 
   const loadDashboard = useCallback(async () => {
     setRefreshing(true);
@@ -321,10 +361,39 @@ export default function AdminDashboard() {
     super: accounts.filter((account) => account.tier === 'super').length,
     heavy: accounts.filter((account) => account.tier === 'heavy').length,
   }), [accounts]);
-  const filteredAccounts = useMemo(
-    () => poolFilter === 'all' ? accounts : accounts.filter((account) => account.tier === poolFilter),
-    [accounts, poolFilter],
-  );
+  const filteredAccounts = useMemo(() => {
+    const query = accountQuery.trim().toLowerCase();
+    return accounts.filter((account) => {
+      const matchesPool = poolFilter === 'all' || account.tier === poolFilter;
+      const matchesStatus = accountStatusFilter === 'all' || account.status === accountStatusFilter;
+      const matchesQuery = !query || [account.name, account.id, account.lastError || ''].some((value) => value.toLowerCase().includes(query));
+      return matchesPool && matchesStatus && matchesQuery;
+    });
+  }, [accountQuery, accountStatusFilter, accounts, poolFilter]);
+
+  const filteredSongs = useMemo(() => {
+    const query = taskQuery.trim().toLowerCase();
+    return songs.filter((song) => {
+      const status = song.status || '';
+      const matchesStatus = taskFilter === 'all'
+        || (taskFilter === 'active' && ['streaming', 'submitted', 'queued'].includes(status))
+        || (taskFilter === 'complete' && status === 'complete')
+        || (taskFilter === 'error' && status === 'error');
+      const matchesQuery = !query || [song.title || '', song.prompt || '', song.id || ''].some((value) => value.toLowerCase().includes(query));
+      return matchesStatus && matchesQuery;
+    });
+  }, [songs, taskFilter, taskQuery]);
+
+  const taskCounts = useMemo(() => ({
+    all: songs.length,
+    active: songs.filter((song) => ['streaming', 'submitted', 'queued'].includes(song.status || '')).length,
+    complete: songs.filter((song) => song.status === 'complete').length,
+    error: songs.filter((song) => song.status === 'error').length,
+  }), [songs]);
+  const totalTaskPages = Math.max(1, Math.ceil(filteredSongs.length / TASKS_PER_PAGE));
+  const currentTaskPage = Math.min(taskPage, totalTaskPages);
+  const visibleSongs = filteredSongs.slice((currentTaskPage - 1) * TASKS_PER_PAGE, currentTaskPage * TASKS_PER_PAGE);
+  const apiEndpoint = apiBase === '--' ? '--' : `${apiBase}/v1`;
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -580,32 +649,18 @@ export default function AdminDashboard() {
   function switchView(view: View) {
     setActiveView(view);
     setSidebarOpen(false);
+    if (window.location.hash !== `#${view}`) window.location.hash = view;
   }
 
-  function renderStatusStrip() {
+  function renderPageHeader(title: string, subtitle: string, actions?: React.ReactNode) {
     return (
-      <section className={styles.statusStrip}>
-        <div className={styles.statusStripLeft}>
-          <div className={styles.statusItem}>
-            <div className={styles.connectionLine}><span className={styles.connectionDot} />服务已连接</div>
-            <div className={styles.statusLabel}>Suno API 管理接口</div>
-          </div>
-          <div className={styles.statusItem}>
-            <div className={styles.statusLabel}>API Base</div>
-            <div className={styles.statusValue}>{apiBase}</div>
-          </div>
+      <div className={styles.pageHeader}>
+        <div className={styles.pageHeading}>
+          <h1 className={styles.pageTitle}>{title}</h1>
+          <p className={styles.pageSubtitle}>{subtitle}</p>
         </div>
-        <div className={styles.statusStripRight}>
-          <div className={styles.statusItem}>
-            <div className={styles.statusLabel}>账号池</div>
-            <div className={`${styles.statusValue} ${activeAccounts > 0 ? styles.statusValueSuccess : ''}`}>{activeAccounts} 个可用账号</div>
-          </div>
-          <div className={styles.statusItem}>
-            <div className={styles.statusLabel}>最后更新</div>
-            <div className={styles.statusValue}>{formatDate(lastUpdated)}</div>
-          </div>
-        </div>
-      </section>
+        {actions ? <div className={styles.buttonRow}>{actions}</div> : null}
+      </div>
     );
   }
 
@@ -660,30 +715,45 @@ export default function AdminDashboard() {
   function renderOverview() {
     return (
       <>
-        <div className={styles.pageHeader}>
-          <div>
-            <h1 className={styles.pageTitle}>仪表盘</h1>
-            <p className={styles.pageSubtitle}>查看账号池、积分和最近生成任务的运行状态。</p>
-          </div>
-          <div className={styles.buttonRow}>
-            <button className={styles.button} type="button" onClick={loadDashboard} disabled={refreshing}>
-              <RefreshCw size={15} className={refreshing ? styles.spin : undefined} />{refreshing ? '刷新中' : '刷新数据'}
+        {renderPageHeader(
+          '运行概览',
+          '集中查看积分、账号池容量和任务执行情况。',
+          <>
+            <button className={styles.button} type="button" onClick={() => switchView('accounts')}>
+              <Plus size={15} />添加账号
             </button>
+            <button className={`${styles.button} ${styles.buttonPrimary}`} type="button" onClick={() => switchView('generate')}>
+              <WandSparkles size={15} />生成音乐
+            </button>
+          </>,
+        )}
+        <section className={styles.operationStrip} aria-label="服务状态">
+          <div className={styles.operationPrimary}>
+            <span className={`${styles.connectionDot} ${activeAccounts === 0 ? styles.connectionDotWarning : ''}`} />
+            <div>
+              <strong>{activeAccounts > 0 ? '账号池可接收请求' : '账号池暂无可用账号'}</strong>
+              <span>{healthyAccounts} / {accounts.length} 个账号健康，当前并发 {inflight}</span>
+            </div>
           </div>
-        </div>
-        {renderStatusStrip()}
+          <div className={styles.operationItems}>
+            <div><span>接口鉴权</span><strong>{apiKeyStatus?.enabled ? '已启用' : '开放访问'}</strong></div>
+            <div><span>验证码</span><strong>{captchaStatus?.provider === 'yescaptcha' ? 'YesCaptcha' : captchaStatus?.provider === '2captcha' ? '2Captcha' : '未配置'}</strong></div>
+            <div><span>自动同步</span><strong>{formatDate(lastUpdated)}</strong></div>
+          </div>
+        </section>
         <div className={styles.statGrid}>
           {renderStat('可用积分', formatNumber(totalCredits), quota?.period || '当前计费周期', <CircleDollarSign size={16} />, styles.toneAmber)}
-          {renderStat('本月用量', `${formatNumber(usage.used)} / ${formatNumber(usage.limit)}`, `${usagePercent}% 已使用`, <Gauge size={16} />, styles.toneBlue)}
-          {renderStat('账号总数', formatNumber(accounts.length), `${poolCounts.basic} basic · ${poolCounts.super} super · ${poolCounts.heavy} heavy`, <UsersRound size={16} />, styles.toneViolet)}
-          {renderStat('健康账号', formatNumber(healthyAccounts), `${activeAccounts} 个正在接收请求`, <ShieldCheck size={16} />, styles.toneGreen)}
+          {renderStat('可用账号', `${activeAccounts} / ${accounts.length}`, `${healthyAccounts} 个账号健康`, <UsersRound size={16} />, styles.toneGreen)}
           {renderStat('并发任务', formatNumber(inflight), '当前正在处理的请求', <Activity size={16} />, styles.toneCyan)}
-          {renderStat('任务记录', formatNumber(songs.length), '最近返回的任务列表', <Music2 size={16} />, styles.toneRed)}
+          {renderStat('任务状态', `${taskCounts.active} 进行中`, `${taskCounts.complete} 已完成 · ${taskCounts.error} 失败`, <ListMusic size={16} />, taskCounts.error > 0 ? styles.toneRed : styles.toneBlue)}
         </div>
         <div className={styles.overviewGrid}>
           <section className={styles.panel}>
             <div className={styles.panelHeader}>
-              <h2 className={styles.panelTitle}>配额概览</h2>
+              <div>
+                <h2 className={styles.panelTitle}>本月配额</h2>
+                <p className={styles.panelDescription}>所有已同步账号的用量汇总</p>
+              </div>
               <span className={styles.panelMeta}>{usage.limit ? `${usagePercent}%` : '暂无配额'}</span>
             </div>
             <div className={styles.panelBody}>
@@ -692,21 +762,43 @@ export default function AdminDashboard() {
                 <div className={styles.usagePercent}>{usagePercent}%</div>
               </div>
               <div className={`${styles.progressTrack} ${styles.usageProgress}`}><div className={styles.progressFill} style={{ width: `${usagePercent}%` }} /></div>
-              <div className={styles.poolBreakdown}>
-                <div className={`${styles.poolBreakdownItem} ${styles.poolBasic}`}><div className={styles.poolName}>basic</div><div className={styles.poolCount}>{poolCounts.basic}</div></div>
-                <div className={`${styles.poolBreakdownItem} ${styles.poolSuper}`}><div className={styles.poolName}>super</div><div className={styles.poolCount}>{poolCounts.super}</div></div>
-                <div className={`${styles.poolBreakdownItem} ${styles.poolHeavy}`}><div className={styles.poolName}>heavy</div><div className={styles.poolCount}>{poolCounts.heavy}</div></div>
-              </div>
+              <div className={styles.usageFootnote}>{formatNumber(Math.max(0, usage.limit - usage.used))} 额度尚未使用</div>
             </div>
           </section>
           <section className={styles.panel}>
             <div className={styles.panelHeader}>
-              <h2 className={styles.panelTitle}>最近任务</h2>
-              <button className={styles.button} type="button" onClick={() => switchView('generate')}>查看全部</button>
+              <div>
+                <h2 className={styles.panelTitle}>账号池容量</h2>
+                <p className={styles.panelDescription}>按 basic、super、heavy 分组</p>
+              </div>
+              <button className={styles.textButton} type="button" onClick={() => switchView('accounts')}>管理账号<ChevronRight size={14} /></button>
+            </div>
+            <div className={styles.poolStatusList}>
+              {(['basic', 'super', 'heavy'] as const).map((tier) => {
+                const tierAccounts = accounts.filter((account) => account.tier === tier);
+                const tierActive = tierAccounts.filter((account) => account.enabled && account.status === 'active').length;
+                const tierCredits = tierAccounts.reduce((sum, account) => sum + (account.creditsLeft || 0), 0);
+                return (
+                  <div className={styles.poolStatusRow} key={tier}>
+                    <span className={`${styles.poolSwatch} ${styles[`poolSwatch${tier[0].toUpperCase()}${tier.slice(1)}`]}`} />
+                    <div className={styles.poolStatusMain}><strong>{tier}</strong><span>{tierCredits} 可用积分</span></div>
+                    <div className={styles.poolStatusValue}><strong>{tierActive}</strong><span>/ {tierAccounts.length} 可用</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          <section className={`${styles.panel} ${styles.overviewTasksPanel}`}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2 className={styles.panelTitle}>近期任务</h2>
+                <p className={styles.panelDescription}>最近提交的音乐生成记录</p>
+              </div>
+              <button className={styles.textButton} type="button" onClick={() => switchView('tasks')}>查看全部<ChevronRight size={14} /></button>
             </div>
             {songs.length === 0
-              ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Music2 size={19} /></span><span className={styles.emptyTitle}>还没有任务记录</span><span className={styles.emptyText}>添加账号后，可以在生成任务中提交第一首音乐。</span></div>
-              : <div className={styles.taskList}>{songs.slice(0, 5).map((song) => renderTaskRow(song))}</div>}
+              ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Music2 size={19} /></span><span className={styles.emptyTitle}>还没有任务记录</span><span className={styles.emptyText}>添加账号后，可以在音乐生成中提交第一首作品。</span></div>
+              : <div className={styles.taskList}>{songs.slice(0, 6).map((song) => renderTaskRow(song))}</div>}
           </section>
         </div>
       </>
@@ -716,31 +808,36 @@ export default function AdminDashboard() {
   function renderAccountRow(account: PoolAccount) {
     const health = healthPercent(account.health);
     return (
-      <article className={styles.accountRow} key={account.id}>
-        <div className={styles.accountIdentity}>
+      <article className={styles.accountRow} key={account.id} role="row">
+        <div className={styles.accountIdentity} role="cell">
           <div className={styles.accountName}>{account.name}</div>
           <div className={account.lastError ? styles.accountError : styles.accountId}>{account.lastError || `ID ${account.id.slice(0, 12)}`}</div>
         </div>
-        <div className={styles.accountTier}>
+        <div className={styles.accountTier} role="cell">
+          <span className={styles.mobileFieldLabel}>池级别</span>
           <select className={styles.tierSelect} value={account.tier} onChange={(event) => updateAccount(account.id, { tier: event.target.value })} disabled={accountBusy} aria-label={`${account.name} 账号池`}>
             <option value="basic">basic</option>
             <option value="super">super</option>
             <option value="heavy">heavy</option>
           </select>
         </div>
-        <div className={styles.quotaCell}>
+        <div className={styles.quotaCell} role="cell">
+          <span className={styles.mobileFieldLabel}>配额</span>
           <div className={styles.quotaNumbers}><span>{formatNumber(account.creditsLeft)} 积分</span><span>{account.monthlyLimit ? `${formatNumber(account.monthlyUsage)} / ${formatNumber(account.monthlyLimit)}` : '未同步'}</span></div>
           <div className={styles.progressTrack}><div className={styles.progressFill} style={{ width: `${account.monthlyLimit ? Math.min(100, Math.round(((account.monthlyUsage || 0) / account.monthlyLimit) * 100)) : 0}%` }} /></div>
         </div>
-        <div className={styles.healthCell}>
+        <div className={styles.healthCell} role="cell">
+          <span className={styles.mobileFieldLabel}>健康度</span>
           <div className={styles.healthNumbers}><span>健康度</span><span className={styles.healthValue}>{health}%</span></div>
           <div className={styles.progressTrack}><div className={styles.progressFill} style={{ width: `${health}%`, background: health >= 70 ? '#36b779' : '#e6a23c' }} /></div>
         </div>
-        <div className={styles.accountStatus}>
+        <div className={styles.accountStatus} role="cell">
+          <span className={styles.mobileFieldLabel}>状态</span>
           <span className={`${styles.badge} ${statusBadgeClass(account.status)}`}><span className={account.status === 'active' ? styles.connectionDot : undefined} />{accountStatusLabel(account.status)}</span>
           <span className={styles.concurrencyMeta}>{account.lastQuotaSync ? `同步于 ${formatDate(account.lastQuotaSync)}` : '尚未同步'}</span>
         </div>
-        <div className={styles.concurrencyCell}>
+        <div className={styles.concurrencyCell} role="cell">
+          <span className={styles.mobileFieldLabel}>并发</span>
           <div className={styles.concurrencyControls}>
             <span className={styles.concurrencyLive}>{account.inflight}</span>
             <span className={styles.concurrencySlash}>/</span>
@@ -761,12 +858,13 @@ export default function AdminDashboard() {
           <div className={styles.concurrencyMeta}>进行中 / 上限</div>
         </div>
         {pendingDelete === account.id ? (
-          <div className={styles.deleteConfirm}>
+          <div className={styles.deleteConfirm} role="cell">
             <button className={styles.confirmButton} type="button" onClick={() => deleteAccount(account.id)} disabled={accountBusy}>确认删除</button>
             <button className={styles.cancelButton} type="button" onClick={() => setPendingDelete(null)} disabled={accountBusy}>取消</button>
           </div>
         ) : (
-          <div className={styles.rowActions}>
+          <div className={styles.rowActions} role="cell">
+            <span className={styles.mobileFieldLabel}>操作</span>
             <button className={`${styles.iconButton} ${styles.smallIconButton}`} type="button" title={account.enabled ? '停用账号' : '启用账号'} aria-label={account.enabled ? '停用账号' : '启用账号'} onClick={() => updateAccount(account.id, { enabled: !account.enabled })} disabled={accountBusy}>
               {account.enabled ? <PowerOff size={15} /> : <Power size={15} />}
             </button>
@@ -1100,33 +1198,43 @@ export default function AdminDashboard() {
   function renderAccounts() {
     return (
       <>
-        <div className={styles.pageHeader}>
-          <div>
-            <h1 className={styles.pageTitle}>账号池</h1>
-            <p className={styles.pageSubtitle}>管理 basic、super、heavy 三级池。推荐用浏览器插件一键提取 Cookie，也可打开授权链接或手动粘贴。</p>
-          </div>
-          <div className={styles.buttonRow}>
+        {renderPageHeader(
+          '账号池',
+          '管理账号授权、池级别、配额健康度与单账号并发。',
+          <>
             <button className={styles.button} type="button" onClick={refreshAccounts} disabled={accountBusy || accounts.length === 0}>
               <RotateCw size={15} className={accountBusy ? styles.spin : undefined} />同步全部配额
             </button>
             <button className={`${styles.button} ${styles.buttonPrimary}`} type="button" onClick={openAuthWizard} disabled={accountBusy}>
               <Plus size={15} />添加账号
             </button>
-          </div>
-        </div>
+          </>,
+        )}
         <section className={styles.panel} style={{ marginTop: 0 }}>
           <div className={styles.toolbar}>
-            <div className={styles.segmented} role="tablist" aria-label="账号池筛选">
-              {(Object.keys(tierLabels) as PoolFilter[]).map((filter) => (
-                <button key={filter} className={`${styles.segmentedButton} ${poolFilter === filter ? styles.segmentedButtonActive : ''}`} type="button" role="tab" aria-selected={poolFilter === filter} onClick={() => setPoolFilter(filter)}>{tierLabels[filter]} {filter === 'all' ? accounts.length : poolCounts[filter]}</button>
-              ))}
+            <div className={styles.toolbarFilters}>
+              <label className={styles.searchField}>
+                <Search size={15} aria-hidden="true" />
+                <input value={accountQuery} onChange={(event) => setAccountQuery(event.target.value)} placeholder="搜索账号名称或 ID" aria-label="搜索账号" />
+                {accountQuery ? <button type="button" onClick={() => setAccountQuery('')} title="清空搜索" aria-label="清空搜索"><X size={14} /></button> : null}
+              </label>
+              <select className={styles.filterSelect} value={accountStatusFilter} onChange={(event) => setAccountStatusFilter(event.target.value as AccountStatusFilter)} aria-label="账号状态筛选">
+                {(Object.keys(accountStatusLabels) as AccountStatusFilter[]).map((status) => <option value={status} key={status}>{accountStatusLabels[status]}</option>)}
+              </select>
             </div>
-            <span className={styles.panelMeta}>{filteredAccounts.length} 个账号</span>
+            <div className={styles.toolbarBottom}>
+              <div className={styles.segmented} role="tablist" aria-label="账号池筛选">
+                {(Object.keys(tierLabels) as PoolFilter[]).map((filter) => (
+                  <button key={filter} className={`${styles.segmentedButton} ${poolFilter === filter ? styles.segmentedButtonActive : ''}`} type="button" role="tab" aria-selected={poolFilter === filter} onClick={() => setPoolFilter(filter)}>{tierLabels[filter]} <span>{filter === 'all' ? accounts.length : poolCounts[filter]}</span></button>
+                ))}
+              </div>
+              <span className={styles.toolbarCount}>显示 {filteredAccounts.length} / {accounts.length} 个账号</span>
+            </div>
           </div>
           {filteredAccounts.length === 0
-            ? <div className={styles.emptyState}><span className={styles.emptyIcon}><UsersRound size={19} /></span><span className={styles.emptyTitle}>当前没有账号</span><span className={styles.emptyText}>点击右上角「添加账号」，通过 cookie-extractor 或手动粘贴 Cookie 完成授权。</span></div>
-            : <div className={styles.accountTable}>
-              <div className={styles.accountHeader}><span>账号</span><span>池级别</span><span>配额</span><span>健康度</span><span>状态</span><span>并发</span><span>操作</span></div>
+            ? <div className={styles.emptyState}><span className={styles.emptyIcon}><UsersRound size={19} /></span><span className={styles.emptyTitle}>{accounts.length === 0 ? '还没有账号' : '没有匹配的账号'}</span><span className={styles.emptyText}>{accounts.length === 0 ? '点击「添加账号」，通过浏览器插件、授权链接或 Cookie 完成授权。' : '调整池级别、状态或搜索条件后重试。'}</span></div>
+            : <div className={styles.accountTable} role="table" aria-label="账号池列表">
+              <div className={styles.accountHeader} role="row"><span role="columnheader">账号</span><span role="columnheader">池级别</span><span role="columnheader">配额</span><span role="columnheader">健康度</span><span role="columnheader">状态</span><span role="columnheader">并发</span><span role="columnheader">操作</span></div>
               {filteredAccounts.map(renderAccountRow)}
             </div>}
         </section>
@@ -1137,18 +1245,19 @@ export default function AdminDashboard() {
   function renderGenerate() {
     return (
       <>
-        <div className={styles.pageHeader}>
-          <div>
-            <h1 className={styles.pageTitle}>生成任务</h1>
-            <p className={styles.pageSubtitle}>提交音乐生成请求，并在同一处查看返回的音频和状态。</p>
-          </div>
-          <span className={`${styles.badge} ${styles.badgeGreen}`}><Check size={13} />接口正常</span>
-        </div>
+        {renderPageHeader(
+          '音乐生成',
+          '提交一条音乐任务，系统会按池级别和当前负载选择账号。',
+          <button className={styles.button} type="button" onClick={() => switchView('tasks')}><ListMusic size={15} />查看任务记录</button>,
+        )}
         <div className={styles.generateGrid}>
           <section className={styles.panel}>
-            <div className={styles.panelHeader}><h2 className={styles.panelTitle}>新建任务</h2><span className={styles.panelMeta}>自动选择账号</span></div>
+            <div className={styles.panelHeader}>
+              <div><h2 className={styles.panelTitle}>新建任务</h2><p className={styles.panelDescription}>支持提示词和纯音乐模式</p></div>
+              <span className={`${styles.badge} ${styles.badgeGreen}`}><Check size={13} />接口可用</span>
+            </div>
             <form className={styles.generateForm} onSubmit={generate}>
-              <label className={styles.field}><span className={styles.fieldLabel}>提示词</span><textarea className={styles.textarea} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述想要生成的音乐风格、情绪和乐器…" /></label>
+              <label className={styles.field}><span className={styles.fieldLabel}>提示词 <span className={styles.fieldHint}>描述风格、情绪、乐器和节奏</span></span><textarea className={styles.textarea} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：夜晚城市街头的爵士鼓点，温暖的电钢琴，适合专注工作的器乐曲…" /></label>
               <div className={styles.generateOptions}>
                 <label className={styles.field}><span className={styles.fieldLabel}>优先池级别</span><select className={styles.select} value={generationPool} onChange={(event) => setGenerationPool(event.target.value as 'basic' | 'super' | 'heavy')}><option value="basic">basic（标准）</option><option value="super">super（高容量）</option><option value="heavy">heavy（最高容量）</option></select></label>
                 <label className={styles.checkboxLabel}><input className={styles.checkbox} type="checkbox" checked={instrumental} onChange={(event) => setInstrumental(event.target.checked)} />纯音乐</label>
@@ -1157,13 +1266,65 @@ export default function AdminDashboard() {
               {accounts.length === 0 && <div className={styles.loginError}>请先在账号池中添加可用账号。</div>}
             </form>
           </section>
-          <section className={styles.panel}>
-            <div className={styles.panelHeader}><h2 className={styles.panelTitle}>任务列表</h2><span className={styles.panelMeta}>每 15 秒自动刷新</span></div>
-            {songs.length === 0
-              ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Music2 size={19} /></span><span className={styles.emptyTitle}>暂无生成任务</span><span className={styles.emptyText}>提交任务后，状态和音频会显示在这里。</span></div>
-              : songs.map((song) => renderTaskRow(song, true))}
-          </section>
+          <div className={styles.sideStack}>
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>池容量</h2><p className={styles.panelDescription}>选择优先级，必要时自动降级</p></div></div>
+              <div className={styles.poolChoiceList}>
+                {(['basic', 'super', 'heavy'] as const).map((tier) => {
+                  const tierAccounts = accounts.filter((account) => account.tier === tier);
+                  const available = tierAccounts.filter((account) => account.enabled && account.status === 'active').length;
+                  return <button type="button" key={tier} className={`${styles.poolChoice} ${generationPool === tier ? styles.poolChoiceActive : ''}`} onClick={() => setGenerationPool(tier)}><span><strong>{tier}</strong><small>{available} / {tierAccounts.length} 可用</small></span><ChevronRight size={15} /></button>;
+                })}
+              </div>
+            </section>
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>请求信息</h2><p className={styles.panelDescription}>生成接口的当前连接状态</p></div></div>
+              <div className={styles.detailList}>
+                <div><span>接口地址</span><code>{apiEndpoint}</code></div>
+                <div><span>当前账号</span><strong>{activeAccounts} 个可用</strong></div>
+                <div><span>自动刷新</span><strong>每 15 秒</strong></div>
+              </div>
+            </section>
+          </div>
         </div>
+      </>
+    );
+  }
+
+  function renderTasks() {
+    return (
+      <>
+        {renderPageHeader(
+          '任务记录',
+          '查看生成任务的状态、提示词和音频结果。',
+          <button className={`${styles.button} ${styles.buttonPrimary}`} type="button" onClick={() => switchView('generate')}><WandSparkles size={15} />新建生成任务</button>,
+        )}
+        <section className={styles.panel}>
+          <div className={styles.taskToolbar}>
+            <div className={styles.segmented} role="tablist" aria-label="任务状态筛选">
+              {(Object.keys(taskFilterLabels) as TaskFilter[]).map((filter) => (
+                <button key={filter} className={`${styles.segmentedButton} ${taskFilter === filter ? styles.segmentedButtonActive : ''}`} type="button" role="tab" aria-selected={taskFilter === filter} onClick={() => { setTaskFilter(filter); setTaskPage(1); }}>{taskFilterLabels[filter]} <span>{taskCounts[filter]}</span></button>
+              ))}
+            </div>
+            <label className={styles.searchField}>
+              <Search size={15} aria-hidden="true" />
+              <input value={taskQuery} onChange={(event) => { setTaskQuery(event.target.value); setTaskPage(1); }} placeholder="搜索标题、提示词或任务 ID" aria-label="搜索任务" />
+              {taskQuery ? <button type="button" onClick={() => { setTaskQuery(''); setTaskPage(1); }} title="清空搜索" aria-label="清空搜索"><X size={14} /></button> : null}
+            </label>
+          </div>
+          {visibleSongs.length === 0
+            ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Music2 size={19} /></span><span className={styles.emptyTitle}>{songs.length === 0 ? '暂无生成任务' : '没有匹配的任务'}</span><span className={styles.emptyText}>{songs.length === 0 ? '提交任务后，状态和音频会显示在这里。' : '调整状态或搜索条件后重试。'}</span></div>
+            : <div className={styles.taskList}>{visibleSongs.map((song) => renderTaskRow(song, true))}</div>}
+          {filteredSongs.length > TASKS_PER_PAGE ? (
+            <div className={styles.pagination}>
+              <span>第 {currentTaskPage} / {totalTaskPages} 页，共 {filteredSongs.length} 条</span>
+              <div className={styles.paginationButtons}>
+                <button className={styles.iconButton} type="button" onClick={() => setTaskPage((page) => Math.max(1, page - 1))} disabled={currentTaskPage === 1} aria-label="上一页" title="上一页"><ChevronLeft size={16} /></button>
+                <button className={styles.iconButton} type="button" onClick={() => setTaskPage((page) => Math.min(totalTaskPages, page + 1))} disabled={currentTaskPage === totalTaskPages} aria-label="下一页" title="下一页"><ChevronRight size={16} /></button>
+              </div>
+            </div>
+          ) : null}
+        </section>
       </>
     );
   }
@@ -1335,109 +1496,48 @@ export default function AdminDashboard() {
   function renderApiKey() {
     const status = apiKeyStatus;
     return (
-      <div className={styles.generateGrid}>
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <div className={styles.panelTitle}>OpenAI 兼容接口密钥</div>
-              <div className={styles.panelMeta}>用于 sub2api / 第三方调用 /v1/* 。启用后必须携带 Authorization: Bearer &lt;key&gt;。</div>
+      <>
+        {renderPageHeader(
+          '接口密钥',
+          '控制 OpenAI 兼容接口的访问方式，供 sub2api 和其他客户端使用。',
+          <button className={styles.button} type="button" onClick={refreshApiKeyStatus} disabled={apiKeyLoading}><RefreshCw size={14} className={apiKeyLoading ? styles.spin : undefined} />{apiKeyLoading ? '刷新中…' : '刷新状态'}</button>,
+        )}
+        <div className={styles.settingsLayout}>
+          <aside className={styles.settingsSummary}>
+            <div className={styles.settingsSummaryIcon}><KeyRound size={19} /></div>
+            <h2>接入状态</h2>
+            <p>客户端调用时使用下方地址和密钥。</p>
+            <div className={styles.settingsStatusList}>
+              <div className={styles.settingsStatusRow}><span>鉴权</span><strong className={status?.enabled ? styles.textSuccess : styles.textWarning}>{status?.enabled ? '已启用' : '开放访问'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>密钥</span><strong>{status?.apiKeyMasked || '未配置'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>更新</span><strong>{formatDate(status?.updatedAt)}</strong></div>
             </div>
-            <button className={styles.button} type="button" onClick={refreshApiKeyStatus} disabled={apiKeyLoading}>
-              <RefreshCw size={14} className={apiKeyLoading ? styles.spin : undefined} />
-              {apiKeyLoading ? '刷新中…' : '刷新状态'}
-            </button>
-          </div>
-          <div className={styles.panelBody}>
-            <div className={styles.statGrid}>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>鉴权状态</div>
-                <div className={styles.readonlyValue}>{status?.enabled ? '已启用' : '未启用（开放）'}</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>当前密钥</div>
-                <div className={styles.readonlyValue}>{status?.apiKeyMasked || '未配置'}</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>Base URL</div>
-                <div className={styles.readonlyValue}>{apiBase}/v1</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>更新时间</div>
-                <div className={styles.readonlyValue}>{formatDate(status?.updatedAt)}</div>
-              </div>
-            </div>
-
-            {apiKeyPlain ? (
-              <div className={styles.panel} style={{ marginTop: 16, padding: 14 }}>
-                <div className={styles.fieldLabel}>新密钥（仅显示一次，请立刻复制）</div>
-                <div className={styles.passwordField}>
-                  <input className={styles.input} readOnly value={apiKeyPlain} />
-                  <button
-                    className={styles.button}
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(apiKeyPlain);
-                        setMessage('密钥已复制到剪贴板');
-                      } catch {
-                        setMessage('请手动复制密钥');
-                      }
-                    }}
-                  >
-                    复制
-                  </button>
+            <button className={styles.endpointCopyRow} type="button" onClick={() => copyText(apiEndpoint, 'api-base')}><Terminal size={15} /><code>{apiEndpoint}</code>{copiedCommand === 'api-base' ? <CopyCheck size={15} /> : <Copy size={15} />}</button>
+            <p className={styles.settingsHint}>Base URL 以 `/v1` 结尾，模型名称使用 `suno-music`。</p>
+          </aside>
+          <section className={`${styles.panel} ${styles.settingsMain}`}>
+            <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>配置 API Key</h2><p className={styles.panelDescription}>留空保留当前密钥，输入 CLEAR 可清空。</p></div></div>
+            <div className={styles.panelBody}>
+              {apiKeyPlain ? (
+                <div className={styles.secretNotice}>
+                  <div><strong>新密钥已生成</strong><span>只显示这一次，请立即复制并保存。</span></div>
+                  <div className={styles.secretValueRow}><code>{apiKeyPlain}</code><button className={styles.button} type="button" onClick={() => copyText(apiKeyPlain, 'api-key')}><Copy size={14} />复制</button></div>
                 </div>
-              </div>
-            ) : null}
-
-            <form className={styles.generateForm} onSubmit={saveApiKeySettings} style={{ marginTop: 18 }}>
-              <label className={styles.checkRow} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="checkbox"
-                  checked={apiKeyForm.enabled}
-                  onChange={(e) => setApiKeyForm((prev) => ({ ...prev, enabled: e.target.checked }))}
-                />
-                <span>启用 API Key 鉴权（/v1/chat/completions、/v1/models 等）</span>
-              </label>
-              <div className={`${styles.field} ${styles.fieldFull}`}>
-                <div className={styles.fieldLabel}>自定义密钥（留空则不修改；输入 CLEAR 可清空）</div>
-                <div className={styles.passwordField}>
-                  <input
-                    className={styles.input}
-                    type={apiKeyForm.showKey ? 'text' : 'password'}
-                    value={apiKeyForm.apiKey}
-                    onChange={(e) => setApiKeyForm((prev) => ({ ...prev, apiKey: e.target.value }))}
-                    placeholder={status?.apiKeyMasked ? `当前 ${status.apiKeyMasked}` : 'sk-suno-...'}
-                    autoComplete="off"
-                  />
-                  <button
-                    className={styles.iconButton}
-                    type="button"
-                    onClick={() => setApiKeyForm((prev) => ({ ...prev, showKey: !prev.showKey }))}
-                  >
-                    {apiKeyForm.showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={apiKeySaving}>
-                  {apiKeySaving ? '保存中…' : '保存配置'}
-                </button>
-                <button className={styles.button} type="button" onClick={generateNewApiKey} disabled={apiKeySaving}>
-                  一键生成新密钥
-                </button>
-              </div>
-            </form>
-            <div className={styles.panelMeta} style={{ marginTop: 14 }}>
-              sub2api 配置：Base URL = {apiBase}/v1 ，API Key = 上方密钥，模型 = suno-music
+              ) : null}
+              <form className={styles.settingsForm} onSubmit={saveApiKeySettings}>
+                <label className={styles.switchRow}><input type="checkbox" checked={apiKeyForm.enabled} onChange={(e) => setApiKeyForm((prev) => ({ ...prev, enabled: e.target.checked }))} /><span><strong>启用 API Key 鉴权</strong><small>调用 `/v1/chat/completions`、`/v1/responses` 等接口时必须携带 Bearer Token。</small></span></label>
+                <div className={`${styles.field} ${styles.fieldFull}`}><div className={styles.fieldLabel}>自定义密钥</div><div className={styles.passwordField}><input className={styles.input} type={apiKeyForm.showKey ? 'text' : 'password'} value={apiKeyForm.apiKey} onChange={(e) => setApiKeyForm((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder={status?.apiKeyMasked ? `当前 ${status.apiKeyMasked}` : 'sk-suno-...'} autoComplete="off" /><button className={styles.iconButton} type="button" onClick={() => setApiKeyForm((prev) => ({ ...prev, showKey: !prev.showKey }))} aria-label={apiKeyForm.showKey ? '隐藏密钥' : '显示密钥'}>{apiKeyForm.showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></div>
+                <div className={styles.buttonRow}><button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={apiKeySaving}><Check size={15} />{apiKeySaving ? '保存中…' : '保存配置'}</button><button className={styles.button} type="button" onClick={generateNewApiKey} disabled={apiKeySaving}><KeyRound size={15} />生成新密钥</button></div>
+              </form>
+              <div className={styles.integrationNote}><strong>sub2api 配置</strong><div><span>Base URL</span><code>{apiEndpoint}</code></div><div><span>API Key</span><code>{status?.apiKeyMasked || '使用上方密钥'}</code></div><div><span>模型</span><code>suno-music</code></div></div>
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      </>
     );
   }
 
-function renderCaptcha() {
+  function renderCaptcha() {
     const status = captchaStatus;
     const providerLabel =
       status?.provider === 'yescaptcha'
@@ -1446,205 +1546,71 @@ function renderCaptcha() {
           ? '2Captcha'
           : '未配置';
     return (
-      <div className={styles.generateGrid}>
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <div className={styles.panelTitle}>验证码配置面板</div>
-              <div className={styles.panelMeta}>配置 YesCaptcha / 2Captcha，保存后立即生效，无需重启容器。</div>
+      <>
+        {renderPageHeader(
+          '验证码配置',
+          '配置 YesCaptcha 和 2Captcha，保存后立即生效，无需重启容器。',
+          <button className={styles.button} type="button" onClick={refreshCaptchaStatus} disabled={captchaLoading}><RefreshCw size={14} className={captchaLoading ? styles.spin : undefined} />{captchaLoading ? '刷新中…' : '刷新状态'}</button>,
+        )}
+        <div className={styles.settingsLayout}>
+          <aside className={styles.settingsSummary}>
+            <div className={styles.settingsSummaryIcon}><ShieldCheck size={19} /></div>
+            <h2>验证服务状态</h2>
+            <p>系统会按策略自动选择可用的打码服务。</p>
+            <div className={styles.settingsStatusList}>
+              <div className={styles.settingsStatusRow}><span>当前提供商</span><strong className={providerLabel === '未配置' ? styles.textWarning : styles.textSuccess}>{providerLabel}</strong></div>
+              <div className={styles.settingsStatusRow}><span>YesCaptcha 余额</span><strong>{status?.yescaptchaBalance === null || status?.yescaptchaBalance === undefined ? '--' : formatNumber(status.yescaptchaBalance)}</strong></div>
+              <div className={styles.settingsStatusRow}><span>YesCaptcha Key</span><strong>{status?.yescaptchaKeyMasked || '未配置'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>2Captcha Key</span><strong>{status?.twocaptchaKeyMasked || '未配置'}</strong></div>
             </div>
-            <button className={styles.button} type="button" onClick={refreshCaptchaStatus} disabled={captchaLoading}>
-              <RefreshCw size={14} className={captchaLoading ? styles.spin : undefined} />
-              {captchaLoading ? '刷新中…' : '刷新状态'}
-            </button>
-          </div>
-          <div className={styles.panelBody}>
-            <div className={styles.statGrid}>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>当前生效提供商</div>
-                <div className={styles.readonlyValue}>{providerLabel}</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>YesCaptcha 余额</div>
-                <div className={styles.readonlyValue}>
-                  {status?.yescaptchaBalance === null || status?.yescaptchaBalance === undefined
-                    ? '--'
-                    : formatNumber(status.yescaptchaBalance)}
-                </div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>YesCaptcha Key</div>
-                <div className={styles.readonlyValue}>{status?.yescaptchaKeyMasked || '未配置'}</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.fieldLabel}>2Captcha Key</div>
-                <div className={styles.readonlyValue}>{status?.twocaptchaKeyMasked || '未配置'}</div>
-              </div>
+            <p className={styles.settingsHint}>建议同时配置两个提供商，并保留自动策略作为故障切换。</p>
+          </aside>
+          <section className={`${styles.panel} ${styles.settingsMain}`}>
+            <div className={styles.panelHeader}><div><h2 className={styles.panelTitle}>服务参数</h2><p className={styles.panelDescription}>密钥留空表示保留当前值，输入 CLEAR 可清空。</p></div></div>
+            <div className={styles.panelBody}>
+              <form className={styles.settingsForm} onSubmit={saveCaptchaSettings}>
+                <div className={styles.formGridTwo}><label className={styles.field}><span className={styles.fieldLabel}>提供商策略</span><select className={styles.select} value={captchaForm.provider} onChange={(e) => setCaptchaForm((prev) => ({ ...prev, provider: e.target.value as any }))}><option value="auto">自动（优先 YesCaptcha）</option><option value="yescaptcha">强制 YesCaptcha</option><option value="2captcha">强制 2Captcha</option></select></label><label className={styles.field}><span className={styles.fieldLabel}>打码模式</span><select className={styles.select} value={captchaForm.captchaMode} onChange={(e) => setCaptchaForm((prev) => ({ ...prev, captchaMode: e.target.value as any }))}><option value="auto">自动（Token → 点选）</option><option value="token">仅 Token API</option><option value="click">仅坐标点选</option></select></label></div>
+                <label className={`${styles.field} ${styles.fieldFull}`}><span className={styles.fieldLabel}>YesCaptcha API 地址</span><input className={styles.input} value={captchaForm.yescaptchaBaseUrl} onChange={(e) => setCaptchaForm((prev) => ({ ...prev, yescaptchaBaseUrl: e.target.value }))} placeholder="https://api.yescaptcha.com" /></label>
+                <label className={`${styles.field} ${styles.fieldFull}`}><span className={styles.fieldLabel}>YesCaptcha Key</span><div className={styles.passwordField}><input className={styles.input} type={captchaForm.showYesKey ? 'text' : 'password'} value={captchaForm.yescaptchaKey} onChange={(e) => setCaptchaForm((prev) => ({ ...prev, yescaptchaKey: e.target.value }))} placeholder={status?.yescaptchaKeyMasked ? `当前 ${status.yescaptchaKeyMasked}` : '粘贴 YesCaptcha ClientKey'} autoComplete="off" /><button className={styles.iconButton} type="button" onClick={() => setCaptchaForm((prev) => ({ ...prev, showYesKey: !prev.showYesKey }))} aria-label={captchaForm.showYesKey ? '隐藏 YesCaptcha Key' : '显示 YesCaptcha Key'}>{captchaForm.showYesKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+                <label className={`${styles.field} ${styles.fieldFull}`}><span className={styles.fieldLabel}>2Captcha Key</span><div className={styles.passwordField}><input className={styles.input} type={captchaForm.showTwoKey ? 'text' : 'password'} value={captchaForm.twocaptchaKey} onChange={(e) => setCaptchaForm((prev) => ({ ...prev, twocaptchaKey: e.target.value }))} placeholder={status?.twocaptchaKeyMasked ? `当前 ${status.twocaptchaKeyMasked}` : '粘贴 2Captcha API Key'} autoComplete="off" /><button className={styles.iconButton} type="button" onClick={() => setCaptchaForm((prev) => ({ ...prev, showTwoKey: !prev.showTwoKey }))} aria-label={captchaForm.showTwoKey ? '隐藏 2Captcha Key' : '显示 2Captcha Key'}>{captchaForm.showTwoKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+                <div className={styles.buttonRow}><button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={captchaSaving}><ShieldCheck size={15} />{captchaSaving ? '保存中…' : '保存配置'}</button><button className={styles.button} type="button" disabled={captchaSaving} onClick={() => setCaptchaForm((prev) => ({ ...prev, provider: '2captcha' }))}>切换为 2Captcha</button></div>
+              </form>
+              {status?.yescaptchaError && <div className={`${styles.notice} ${styles.noticeError}`}><X size={16} />{status.yescaptchaError}</div>}
+              <div className={styles.helpBox}><div className={styles.helpTitle}>运行说明</div><div className={styles.helpText}>配置写入服务器 `data/captcha-settings.json`，保存后运行时立即生效。更新时间：{status?.updatedAt ? formatDate(status.updatedAt) : '尚未通过面板保存'}。</div></div>
             </div>
-
-            <form className={styles.generateForm} onSubmit={saveCaptchaSettings} style={{ marginTop: 18 }}>
-              <div className={styles.field}>
-                <div className={styles.fieldLabel}>提供商策略</div>
-                <select
-                  className={styles.input}
-                  value={captchaForm.provider}
-                  onChange={(e) => setCaptchaForm((prev) => ({ ...prev, provider: e.target.value as any }))}
-                >
-                  <option value="auto">自动（优先 YesCaptcha，其次 2Captcha）</option>
-                  <option value="yescaptcha">强制 YesCaptcha</option>
-                  <option value="2captcha">强制 2Captcha</option>
-                </select>
-              </div>
-              <div className={styles.field}>
-                <div className={styles.fieldLabel}>打码模式</div>
-                <select
-                  className={styles.input}
-                  value={captchaForm.captchaMode}
-                  onChange={(e) => setCaptchaForm((prev) => ({ ...prev, captchaMode: e.target.value as any }))}
-                >
-                  <option value="auto">自动（先 token 后点选）</option>
-                  <option value="token">仅 Token API</option>
-                  <option value="click">仅坐标点选</option>
-                </select>
-              </div>
-              <div className={`${styles.field} ${styles.fieldFull}`}>
-                <div className={styles.fieldLabel}>YesCaptcha API 地址</div>
-                <input
-                  className={styles.input}
-                  value={captchaForm.yescaptchaBaseUrl}
-                  onChange={(e) => setCaptchaForm((prev) => ({ ...prev, yescaptchaBaseUrl: e.target.value }))}
-                  placeholder="https://api.yescaptcha.com"
-                />
-              </div>
-              <div className={`${styles.field} ${styles.fieldFull}`}>
-                <div className={styles.fieldLabel}>YesCaptcha Key（留空则不修改；输入 CLEAR 可清空）</div>
-                <div className={styles.passwordField}>
-                  <input
-                    className={styles.input}
-                    type={captchaForm.showYesKey ? 'text' : 'password'}
-                    value={captchaForm.yescaptchaKey}
-                    onChange={(e) => setCaptchaForm((prev) => ({ ...prev, yescaptchaKey: e.target.value }))}
-                    placeholder={status?.yescaptchaKeyMasked ? `当前 ${status.yescaptchaKeyMasked}` : '粘贴 YesCaptcha ClientKey'}
-                    autoComplete="off"
-                  />
-                  <button
-                    className={styles.iconButton}
-                    type="button"
-                    onClick={() => setCaptchaForm((prev) => ({ ...prev, showYesKey: !prev.showYesKey }))}
-                    aria-label="切换显示 YesCaptcha Key"
-                  >
-                    {captchaForm.showYesKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div className={`${styles.field} ${styles.fieldFull}`}>
-                <div className={styles.fieldLabel}>2Captcha Key（留空则不修改；输入 CLEAR 可清空）</div>
-                <div className={styles.passwordField}>
-                  <input
-                    className={styles.input}
-                    type={captchaForm.showTwoKey ? 'text' : 'password'}
-                    value={captchaForm.twocaptchaKey}
-                    onChange={(e) => setCaptchaForm((prev) => ({ ...prev, twocaptchaKey: e.target.value }))}
-                    placeholder={status?.twocaptchaKeyMasked ? `当前 ${status.twocaptchaKeyMasked}` : '粘贴 2Captcha API Key'}
-                    autoComplete="off"
-                  />
-                  <button
-                    className={styles.iconButton}
-                    type="button"
-                    onClick={() => setCaptchaForm((prev) => ({ ...prev, showTwoKey: !prev.showTwoKey }))}
-                    aria-label="切换显示 2Captcha Key"
-                  >
-                    {captchaForm.showTwoKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div className={styles.buttonRow}>
-                <button className={styles.buttonPrimary} type="submit" disabled={captchaSaving}>
-                  <ShieldCheck size={15} />
-                  {captchaSaving ? '保存中…' : '保存配置'}
-                </button>
-                <button
-                  className={styles.button}
-                  type="button"
-                  disabled={captchaSaving}
-                  onClick={() =>
-                    setCaptchaForm((prev) => ({
-                      ...prev,
-                      provider: '2captcha',
-                      twocaptchaKey: prev.twocaptchaKey || '',
-                    }))
-                  }
-                >
-                  切换为 2Captcha
-                </button>
-              </div>
-            </form>
-
-            {status?.yescaptchaError && (
-              <div className={`${styles.notice} ${styles.noticeError}`} style={{ marginTop: 16 }}>
-                <X size={16} />{status.yescaptchaError}
-              </div>
-            )}
-            <div className={styles.helpBox} style={{ marginTop: 16 }}>
-              <div className={styles.helpTitle}>说明</div>
-              <div className={styles.helpText}>
-                配置写入服务器 `data/captcha-settings.json`，运行时立即生效。推荐同时配置 YesCaptcha 与 2Captcha 作为双通道。
-                文档：YesCaptcha / 2Captcha。更新时间：{status?.updatedAt ? formatDate(status.updatedAt) : '尚未通过面板保存'}
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className={styles.adminRoot}>
-      {sidebarOpen && <button className={styles.backdrop} type="button" onClick={() => setSidebarOpen(false)} aria-label="关闭导航" />}
-      <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
-        <div className={styles.brand}><span className={styles.brandMark}><Music2 size={17} /></span><span className={styles.brandName}>SUNO API</span></div>
-        <nav className={styles.nav} aria-label="主导航">
-          <div className={styles.navGroupLabel}>管理中心</div>
-          <button className={`${styles.navButton} ${activeView === 'overview' ? styles.navButtonActive : ''}`} type="button" onClick={() => switchView('overview')}><LayoutDashboard size={17} />仪表盘</button>
-          <button className={`${styles.navButton} ${activeView === 'accounts' ? styles.navButtonActive : ''}`} type="button" onClick={() => switchView('accounts')}><UsersRound size={17} />账号池</button>
-          <button className={`${styles.navButton} ${activeView === 'generate' ? styles.navButtonActive : ''}`} type="button" onClick={() => switchView('generate')}><WandSparkles size={17} />生成任务</button>
-          <button className={`${styles.navButton} ${activeView === 'captcha' ? styles.navButtonActive : ''}`} type="button" onClick={() => switchView('captcha')}><ShieldCheck size={17} />验证码配置</button>
-          <button className={`${styles.navButton} ${activeView === 'apikey' ? styles.navButtonActive : ''}`} type="button" onClick={() => switchView('apikey')}>
-            接口密钥
-          </button>
-
-          <div className={styles.navGroupLabel}>服务状态</div>
-          <div className={styles.navButton} role="status"><ServerCog size={17} />接口服务<span style={{ marginLeft: 'auto', color: '#20a573', fontSize: 11 }}>正常</span></div>
-          <a className={styles.navButton} href="/docs" target="_blank" rel="noreferrer">
-            <BookOpen size={17} />接口文档
-            <ExternalLink size={13} style={{ marginLeft: 'auto', opacity: 0.55 }} />
-          </a>
-        </nav>
-        <div className={styles.sidebarFooter}><div className={styles.connectionLine}><span className={styles.connectionDot} />服务运行中</div><div className={styles.sidebarMeta}>{apiBase}</div></div>
-      </aside>
-      <header className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <button className={`${styles.iconButton} ${styles.mobileMenu}`} type="button" onClick={() => setSidebarOpen((value) => !value)} title={sidebarOpen ? '关闭导航' : '打开导航'} aria-label={sidebarOpen ? '关闭导航' : '打开导航'}>{sidebarOpen ? <X size={18} /> : <Menu size={18} />}</button>
-          <div className={styles.breadcrumb}>{viewLabels[activeView]}</div>
-        </div>
-        <div className={styles.topbarActions}>
-          <button className={styles.iconButton} type="button" onClick={loadDashboard} disabled={refreshing} title="刷新全部数据" aria-label="刷新全部数据"><RefreshCw size={16} className={refreshing ? styles.spin : undefined} /></button>
-          <button className={styles.iconButton} type="button" onClick={() => setActiveView('accounts')} title="账号池设置" aria-label="账号池设置"><UsersRound size={16} /></button>
-          <button className={styles.iconButton} type="button" onClick={logout} title="退出登录" aria-label="退出登录"><LogOut size={16} /></button>
-        </div>
-      </header>
-      <main className={styles.content}>
-        <div className={styles.contentInner}>
-          {error && <div className={`${styles.notice} ${styles.noticeError}`}><X size={16} />{error}</div>}
-          {message && <div className={`${styles.notice} ${styles.noticeInfo}`}><Check size={16} />{message}</div>}
-          {activeView === 'overview' && renderOverview()}
-          {activeView === 'accounts' && renderAccounts()}
-          {activeView === 'generate' && renderGenerate()}
-          {activeView === 'apikey' && renderApiKey()}
-          {activeView === 'captcha' && renderCaptcha()}
-        </div>
-      </main>
+    <AdminShell
+      activeView={activeView}
+      sidebarOpen={sidebarOpen}
+      onSidebarOpenChange={setSidebarOpen}
+      onViewChange={switchView}
+      onRefresh={loadDashboard}
+      refreshing={refreshing}
+      onLogout={logout}
+      apiEndpoint={apiEndpoint}
+      lastUpdated={lastUpdated ? formatDate(lastUpdated) : null}
+      activeAccounts={activeAccounts}
+      totalAccounts={accounts.length}
+      copiedEndpoint={copiedCommand === 'api-base'}
+      onCopyEndpoint={() => copyText(apiEndpoint, 'api-base')}
+    >
+      <div className={styles.contentInner}>
+        {error && <div className={`${styles.notice} ${styles.noticeError}`}><X size={16} />{error}</div>}
+        {message && <div className={`${styles.notice} ${styles.noticeInfo}`}><Check size={16} />{message}</div>}
+        {activeView === 'overview' && renderOverview()}
+        {activeView === 'accounts' && renderAccounts()}
+        {activeView === 'generate' && renderGenerate()}
+        {activeView === 'tasks' && renderTasks()}
+        {activeView === 'apikey' && renderApiKey()}
+        {activeView === 'captcha' && renderCaptcha()}
+      </div>
       {renderAuthWizard()}
-    </div>
+    </AdminShell>
   );
 }
