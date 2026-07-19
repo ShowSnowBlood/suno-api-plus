@@ -2,6 +2,8 @@ import { NextResponse, NextRequest } from "next/server";
 import { cookies } from 'next/headers'
 import { DEFAULT_MODEL, runSunoRequest } from "@/lib/SunoApi";
 import { accountTier } from '@/lib/account-pool';
+import { withGenerationConcurrency } from '@/lib/concurrency-settings';
+import { concurrencyLimitResponse } from '@/lib/concurrency-response';
 import { corsHeaders } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +14,11 @@ export async function POST(req: NextRequest) {
       const body = await req.json();
       const { prompt, make_instrumental, model, wait_audio } = body;
 
-      const audioInfo = await runSunoRequest(
+      const audioInfo = await withGenerationConcurrency(async () => runSunoRequest(
         (await cookies()).toString(),
         accountTier(body.pool || req.headers.get('x-suno-pool')),
         (api) => api.generate(prompt, Boolean(make_instrumental), model || DEFAULT_MODEL, Boolean(wait_audio)),
-      );
+      ));
 
       return new NextResponse(JSON.stringify(audioInfo), {
         status: 200,
@@ -27,7 +29,9 @@ export async function POST(req: NextRequest) {
       });
     } catch (error: any) {
       console.error('Error generating audio:', error);
-      
+      const limited = concurrencyLimitResponse(error, corsHeaders);
+      if (limited) return limited;
+
       // Handle different types of errors
       if (error.response) {
         // Axios error with response

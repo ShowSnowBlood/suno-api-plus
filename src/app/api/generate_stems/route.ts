@@ -1,6 +1,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { cookies } from 'next/headers';
 import { DEFAULT_MODEL, sunoApi } from "@/lib/SunoApi";
+import { withGenerationConcurrency } from '@/lib/concurrency-settings';
+import { concurrencyLimitResponse } from '@/lib/concurrency-response';
 import { corsHeaders } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +23,9 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const audioInfo = await (await sunoApi((await cookies()).toString()))
-        .generateStems(audio_id);
+      const audioInfo = await withGenerationConcurrency(async () => (
+        await sunoApi((await cookies()).toString())
+      ).generateStems(audio_id));
 
       return new NextResponse(JSON.stringify(audioInfo), {
         status: 200,
@@ -33,7 +36,9 @@ export async function POST(req: NextRequest) {
       });
     } catch (error: any) {
       console.error('Error generating stems:', error);
-      
+      const limited = concurrencyLimitResponse(error, corsHeaders);
+      if (limited) return limited;
+
       // Handle different types of errors
       if (error.response) {
         // Axios error with response

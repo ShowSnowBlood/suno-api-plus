@@ -9,7 +9,8 @@
   "tags": [
     { "name": "\u9ed8\u8ba4\u5206\u7ec4" },
     { "name": "billing" },
-    { "name": "admin" }
+    { "name": "admin" },
+    { "name": "concurrency" }
   ],
   "paths": {
     "/v1/models": {
@@ -237,6 +238,117 @@
         }
       }
     },
+    "/api/admin/concurrency": {
+      "get": {
+        "summary": "Get global generation concurrency settings and live capacity.",
+        "description": "Requires a valid suno_admin_session cookie. The default global limit is 4 concurrent generation requests.",
+        "tags": ["admin", "concurrency"],
+        "security": [{ "AdminSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Current settings, active request count, and available slots.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/concurrency_snapshot" } } }
+          },
+          "401": { "description": "Admin authentication required." },
+          "500": { "description": "Concurrency settings could not be loaded." }
+        }
+      },
+      "put": {
+        "summary": "Update the global generation concurrency limit.",
+        "description": "Accepts maxConcurrentRequests from 1 to 100 and applies the new limit immediately. Requires a valid suno_admin_session cookie.",
+        "tags": ["admin", "concurrency"],
+        "security": [{ "AdminSession": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/concurrency_settings_update" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Concurrency setting saved and applied.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/concurrency_save_response" } } }
+          },
+          "400": { "description": "maxConcurrentRequests is not an integer from 1 to 100." },
+          "401": { "description": "Admin authentication required." },
+          "500": { "description": "Concurrency settings could not be saved." }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "summary": "Generate music using the OpenAI Chat Completions format.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "security": [{ "BearerAuth": [] }, { "ApiKeyAuth": [] }],
+        "responses": {
+          "200": { "description": "Generation completed." },
+          "401": { "description": "API key required or invalid." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "summary": "Generate music using the OpenAI Responses format.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "security": [{ "BearerAuth": [] }, { "ApiKeyAuth": [] }],
+        "responses": {
+          "200": { "description": "Generation completed." },
+          "401": { "description": "API key required or invalid." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/api/admin/generate": {
+      "post": {
+        "summary": "Submit a generation request from the admin panel.",
+        "tags": ["admin", "concurrency"],
+        "security": [{ "AdminSession": [] }],
+        "responses": {
+          "200": { "description": "Generation submitted." },
+          "401": { "description": "Admin authentication required." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/api/extend_audio": {
+      "post": {
+        "summary": "Extend an existing audio clip.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "responses": {
+          "200": { "description": "Extension submitted or completed." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/api/generate_stems": {
+      "post": {
+        "summary": "Generate stem tracks.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "responses": {
+          "200": { "description": "Stem generation submitted." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/api/generate_lyrics": {
+      "post": {
+        "summary": "Generate lyrics from a prompt.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "responses": {
+          "200": { "description": "Lyrics generated." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
+    "/api/concat": {
+      "post": {
+        "summary": "Generate a complete song from extensions.",
+        "tags": ["\u9ed8\u8ba4\u5206\u7ec4", "concurrency"],
+        "responses": {
+          "200": { "description": "Concatenation submitted." },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
+        }
+      }
+    },
     "/api/custom_generate": {
       "post": {
         "summary": "Generate Audio - Custom Mode",
@@ -303,7 +415,8 @@
                 }
               }
             }
-          }
+          },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
         }
       }
     },
@@ -363,7 +476,8 @@
                 }
               }
             }
-          }
+          },
+          "429": { "$ref": "#/components/responses/ConcurrencyLimitExceeded" }
         }
       }
     },
@@ -555,6 +669,58 @@
         "required": ["ok", "message", "settings", "summary"],
         "properties": { "ok": { "type": "boolean", "example": true }, "message": { "type": "string" }, "settings": { "$ref": "#/components/schemas/billing_settings" }, "summary": { "$ref": "#/components/schemas/billing_summary" } }
       },
+      "concurrency_settings": {
+        "type": "object",
+        "required": ["maxConcurrentRequests"],
+        "properties": {
+          "maxConcurrentRequests": { "type": "integer", "minimum": 1, "maximum": 100, "default": 4, "example": 4 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "concurrency_settings_update": {
+        "type": "object",
+        "required": ["maxConcurrentRequests"],
+        "properties": {
+          "maxConcurrentRequests": { "type": "integer", "minimum": 1, "maximum": 100, "default": 4, "example": 4 }
+        }
+      },
+      "concurrency_snapshot": {
+        "type": "object",
+        "required": ["settings", "activeRequests", "availableSlots"],
+        "properties": {
+          "settings": { "$ref": "#/components/schemas/concurrency_settings" },
+          "activeRequests": { "type": "integer", "minimum": 0, "example": 2 },
+          "availableSlots": { "type": "integer", "minimum": 0, "example": 2 }
+        }
+      },
+      "concurrency_save_response": {
+        "allOf": [
+          { "$ref": "#/components/schemas/concurrency_snapshot" },
+          {
+            "type": "object",
+            "required": ["message"],
+            "properties": { "message": { "type": "string", "example": "并发限制已保存并立即生效。" } }
+          }
+        ]
+      },
+      "concurrency_limit_error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["message", "type", "code", "limit", "active_requests", "retry_after"],
+            "properties": {
+              "message": { "type": "string", "example": "Global generation concurrency limit exceeded." },
+              "type": { "type": "string", "enum": ["rate_limit_error"] },
+              "code": { "type": "string", "enum": ["concurrency_limit_exceeded"] },
+              "limit": { "type": "integer", "example": 4 },
+              "active_requests": { "type": "integer", "example": 4 },
+              "retry_after": { "type": "integer", "example": 5 }
+            }
+          }
+        }
+      },
       "model_list": {
         "type": "object",
         "required": ["object", "data"],
@@ -611,6 +777,22 @@
               "recommended": { "type": "boolean" },
               "alias_of": { "type": "string" }
             }
+          }
+        }
+      }
+    },
+    "responses": {
+      "ConcurrencyLimitExceeded": {
+        "description": "The global generation concurrency limit is full. Retry after a slot is released.",
+        "headers": {
+          "Retry-After": {
+            "description": "Suggested retry delay in seconds.",
+            "schema": { "type": "integer", "example": 5 }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/concurrency_limit_error" }
           }
         }
       }

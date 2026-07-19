@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Gauge,
   KeyRound,
   LayoutDashboard,
   ListMusic,
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react';
 import styles from './AdminShell.module.css';
 
-export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'captcha' | 'apikey' | 'billing' | 'models';
+export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'concurrency' | 'captcha' | 'apikey' | 'billing' | 'models';
 
 export interface AdminShellProps {
   activeView: AdminView;
@@ -69,7 +70,10 @@ const navGroups: NavGroup[] = [
   },
   {
     label: '账号资源',
-    items: [{ view: 'accounts', label: '账号池', icon: UsersRound }],
+    items: [
+      { view: 'accounts', label: '账号池', icon: UsersRound },
+      { view: 'concurrency', label: '并发控制', icon: Gauge },
+    ],
   },
   {
     label: '安全与接入',
@@ -89,6 +93,7 @@ const viewMeta: Record<AdminView, { section: string; title: string; description:
   generate: { section: '生产运营', title: '音乐生成', description: '创建并提交新的音乐任务' },
   tasks: { section: '生产运营', title: '任务记录', description: '查看生成进度与历史结果' },
   accounts: { section: '账号资源', title: '账号池', description: '维护分级账号、并发与配额' },
+  concurrency: { section: '账号资源', title: '并发控制', description: '管理请求容量与实时占用' },
   captcha: { section: '安全与接入', title: '验证码配置', description: '管理验证服务与故障切换' },
   apikey: { section: '安全与接入', title: '接口密钥', description: '管理 OpenAI 兼容接口访问' },
   billing: { section: '计费管理', title: '积分与倍率', description: '计算固定请求价与积分扣除' },

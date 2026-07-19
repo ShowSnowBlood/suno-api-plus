@@ -2,7 +2,7 @@
 
 Enhanced fork of [gcui-art/suno-api](https://github.com/gcui-art/suno-api).
 
-Adds an **admin dashboard**, **multi-account pool**, **OpenAI-compatible endpoints with API key auth**, **credit and multiplier billing**, **YesCaptcha / 2Captcha**, and **cookie extraction tools**.
+Adds an **admin dashboard**, **multi-account pool**, **global generation concurrency control**, **OpenAI-compatible endpoints with API key auth**, **credit and multiplier billing**, **YesCaptcha / 2Captcha**, and **cookie extraction tools**.
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
@@ -13,6 +13,7 @@ Adds an **admin dashboard**, **multi-account pool**, **OpenAI-compatible endpoin
 - Suno music generation APIs (generate, custom mode, extend, lyrics, stems)
 - Admin panel at `/admin` (accounts, generate, captcha, API key, billing, songs)
 - Multi-account pool with `basic` / `super` / `heavy` tiers and quota sync
+- Global generation concurrency limit with live active-request and available-slot status
 - OpenAI-compatible endpoints:
   - `GET /v1/models`
   - `GET /v1/billing`
@@ -143,6 +144,7 @@ URL: `/admin`
 |---|---|
 | Overview | Credits / status |
 | Accounts | Multi-account pool, verify/refresh |
+| Concurrency | Global generation request limit and live slot usage |
 | Generate | Web music generation |
 | Captcha | YesCaptcha / 2Captcha settings |
 | API Key | OpenAI-compatible key management |
@@ -306,6 +308,61 @@ The admin API uses the signed-in `suno_admin_session` cookie:
 - `PUT /api/admin/billing`: save `purchaseCostCny`, `purchasedCredits`,
   `creditsPerGeneration`, `outputsPerGeneration`, `rateMultiplier`, and `cnyPerUsd`
 
+### Global generation concurrency
+
+The service accepts at most `4` concurrent generation requests by default. The
+admin setting `maxConcurrentRequests` accepts integers from `1` to `100` and
+takes effect immediately. This global limit is applied in addition to each
+account's own concurrency limit.
+
+The following nine generation endpoints share the same global capacity:
+
+- `POST /api/generate`
+- `POST /api/custom_generate`
+- `POST /api/extend_audio`
+- `POST /api/generate_stems`
+- `POST /api/generate_lyrics`
+- `POST /api/concat`
+- `POST /api/admin/generate`
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+
+Read-only endpoints such as model discovery, billing, quota, task lookup, and
+song lookup do not consume a generation slot. When all slots are occupied, a
+new generation request fails immediately with HTTP `429` and code
+`concurrency_limit_exceeded`.
+
+The admin API requires the signed-in `suno_admin_session` cookie:
+
+- `GET /api/admin/concurrency`: return `settings`, `activeRequests`, and `availableSlots`
+- `PUT /api/admin/concurrency`: save `maxConcurrentRequests` (`1-100`) and return the updated status
+
+Example update:
+
+```bash
+curl -X PUT "https://<your-domain>/api/admin/concurrency" \
+  -H "Content-Type: application/json" \
+  -H "Cookie: suno_admin_session=<session>" \
+  -d '{"maxConcurrentRequests":4}'
+```
+
+All nine protected generation routes return:
+
+```json
+{
+  "error": {
+    "message": "Global generation concurrency limit exceeded.",
+    "type": "rate_limit_error",
+    "code": "concurrency_limit_exceeded",
+    "limit": 4,
+    "active_requests": 4,
+    "retry_after": 5
+  }
+}
+```
+
+The response also includes `Retry-After: 5`.
+
 ---
 
 ## Native API Routes
@@ -320,6 +377,7 @@ Swagger UI: `/docs`
 - `GET /api/get_limit`
 - `GET /v1/billing` (API key protected when API auth is enabled)
 - `GET /api/admin/billing`, `PUT /api/admin/billing` (admin session required)
+- `GET /api/admin/concurrency`, `PUT /api/admin/concurrency` (admin session required)
 
 ---
 

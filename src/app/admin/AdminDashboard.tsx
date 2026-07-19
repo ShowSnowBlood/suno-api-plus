@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Gauge,
   Link2,
   ListMusic,
   Mail,
@@ -118,7 +119,17 @@ type BillingForm = Record<
   string
 >;
 
-type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey' | 'billing' | 'models';
+type ConcurrencyStatus = {
+  settings: {
+    maxConcurrentRequests: number;
+    updatedAt?: string;
+  };
+  activeRequests: number;
+  availableSlots: number;
+  message?: string;
+};
+
+type View = 'overview' | 'accounts' | 'concurrency' | 'generate' | 'tasks' | 'captcha' | 'apikey' | 'billing' | 'models';
 type PoolFilter = 'all' | 'basic' | 'super' | 'heavy';
 type AccountStatusFilter = 'all' | PoolAccount['status'];
 type TaskFilter = 'all' | 'active' | 'complete' | 'error';
@@ -287,6 +298,11 @@ export default function AdminDashboard() {
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingSaving, setBillingSaving] = useState(false);
   const billingDirtyRef = useRef(false);
+  const [concurrencyStatus, setConcurrencyStatus] = useState<ConcurrencyStatus | null>(null);
+  const [concurrencyLimit, setConcurrencyLimit] = useState('4');
+  const [concurrencyLoading, setConcurrencyLoading] = useState(false);
+  const [concurrencySaving, setConcurrencySaving] = useState(false);
+  const concurrencyDirtyRef = useRef(false);
   const [captchaForm, setCaptchaForm] = useState({
     provider: 'auto' as 'auto' | 'yescaptcha' | '2captcha',
     captchaMode: 'auto' as 'auto' | 'token' | 'click',
@@ -371,7 +387,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey', 'billing', 'models'];
+    const views: View[] = ['overview', 'accounts', 'concurrency', 'generate', 'tasks', 'captcha', 'apikey', 'billing', 'models'];
     const syncFromLocation = () => {
       const requestedView = window.location.hash.replace(/^#/, '') as View;
       if (views.includes(requestedView)) setActiveView(requestedView);
@@ -398,13 +414,14 @@ export default function AdminDashboard() {
     setRefreshing(true);
     setError('');
     try {
-      const [limitResponse, songsResponse, accountsResponse, captchaResponse, apiKeyResponse, billingResponse] = await Promise.all([
+      const [limitResponse, songsResponse, accountsResponse, captchaResponse, apiKeyResponse, billingResponse, concurrencyResponse] = await Promise.all([
         fetch('/api/admin/limit', { cache: 'no-store' }),
         fetch('/api/admin/songs', { cache: 'no-store' }),
         fetch('/api/admin/accounts', { cache: 'no-store' }),
         fetch('/api/admin/captcha', { cache: 'no-store' }),
         fetch('/api/admin/apikey', { cache: 'no-store' }),
         fetch('/api/admin/billing', { cache: 'no-store' }),
+        fetch('/api/admin/concurrency', { cache: 'no-store' }),
       ]);
       const limitData = await limitResponse.json();
       const songsData = await songsResponse.json();
@@ -412,6 +429,7 @@ export default function AdminDashboard() {
       const captchaData = await captchaResponse.json();
       const apiKeyData = await apiKeyResponse.json();
       const billingData = await billingResponse.json();
+      const concurrencyData = await concurrencyResponse.json();
       const errors: string[] = [];
       if (limitResponse.ok) setQuota(limitData);
       else errors.push(limitData.error || '积分信息暂时无法读取。');
@@ -451,6 +469,15 @@ export default function AdminDashboard() {
         }
       } else {
         errors.push(billingData.error || '计费配置暂时无法读取。');
+      }
+
+      if (concurrencyResponse.ok) {
+        setConcurrencyStatus(concurrencyData);
+        if (!concurrencyDirtyRef.current) {
+          setConcurrencyLimit(String(concurrencyData.settings?.maxConcurrentRequests ?? 4));
+        }
+      } else {
+        errors.push(concurrencyData.error || '并发配置暂时无法读取。');
       }
       if (errors.length > 0) setError(Array.from(new Set(errors)).join(' '));
       setLastUpdated(new Date().toISOString());
@@ -1756,6 +1783,167 @@ export default function AdminDashboard() {
     }
   }
 
+  async function refreshConcurrencySettings() {
+    setConcurrencyLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/concurrency', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '读取并发配置失败');
+      setConcurrencyStatus(data);
+      setConcurrencyLimit(String(data.settings?.maxConcurrentRequests ?? 4));
+      concurrencyDirtyRef.current = false;
+      setMessage('并发配置已刷新');
+    } catch (err: any) {
+      setError(err?.message || '读取并发配置失败');
+    } finally {
+      setConcurrencyLoading(false);
+    }
+  }
+
+  async function saveConcurrencySettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const maxConcurrentRequests = Number(concurrencyLimit);
+    if (!Number.isInteger(maxConcurrentRequests) || maxConcurrentRequests < 1 || maxConcurrentRequests > 100) {
+      setError('最大并发请求数必须是 1 到 100 之间的整数。');
+      return;
+    }
+
+    setConcurrencySaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch('/api/admin/concurrency', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxConcurrentRequests }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '保存并发配置失败');
+      setConcurrencyStatus(data);
+      setConcurrencyLimit(String(data.settings?.maxConcurrentRequests ?? maxConcurrentRequests));
+      concurrencyDirtyRef.current = false;
+      setMessage(data.message || '并发配置已保存');
+    } catch (err: any) {
+      setError(err?.message || '保存并发配置失败');
+    } finally {
+      setConcurrencySaving(false);
+    }
+  }
+
+  function renderConcurrency() {
+    const savedLimit = Math.max(1, Number(concurrencyStatus?.settings.maxConcurrentRequests) || 4);
+    const activeRequests = Math.max(0, Number(concurrencyStatus?.activeRequests) || 0);
+    const availableSlots = Math.max(0, Number(concurrencyStatus?.availableSlots) || 0);
+    const utilization = Math.min(100, Math.round((activeRequests / savedLimit) * 100));
+    const inputValue = Number(concurrencyLimit);
+    const validInput = Number.isInteger(inputValue) && inputValue >= 1 && inputValue <= 100;
+    const capacityTone = utilization >= 100 ? styles.badgeRed : utilization >= 75 ? styles.badgeAmber : styles.badgeGreen;
+    const updateLimit = (value: string) => {
+      concurrencyDirtyRef.current = true;
+      setConcurrencyLimit(value);
+    };
+
+    return (
+      <>
+        {renderPageHeader(
+          '并发控制',
+          '设置音乐生成接口可同时处理的请求数量，并查看当前实时占用。',
+          <button className={styles.button} type="button" onClick={refreshConcurrencySettings} disabled={concurrencyLoading}>
+            <RefreshCw size={14} className={concurrencyLoading ? styles.spin : undefined} />
+            {concurrencyLoading ? '刷新中…' : '刷新状态'}
+          </button>,
+        )}
+        <div className={styles.settingsLayout}>
+          <aside className={styles.settingsSummary}>
+            <div className={styles.settingsSummaryIcon}><Gauge size={19} /></div>
+            <h2>当前请求容量</h2>
+            <p>实时数据来自服务端并发计数器。</p>
+            <div className={styles.settingsStatusList}>
+              <div className={styles.settingsStatusRow}><span>正在处理</span><strong>{formatQuantity(activeRequests, 0)}</strong></div>
+              <div className={styles.settingsStatusRow}><span>并发上限</span><strong>{formatQuantity(savedLimit, 0)}</strong></div>
+              <div className={styles.settingsStatusRow}><span>可用槽位</span><strong>{formatQuantity(availableSlots, 0)}</strong></div>
+              <div className={styles.settingsStatusRow}><span>占用比例</span><strong>{utilization}%</strong></div>
+            </div>
+            <p className={styles.settingsHint}>
+              {availableSlots > 0 ? `当前还可接收 ${formatQuantity(availableSlots, 0)} 个生成请求。` : '当前并发容量已用完。'}
+            </p>
+          </aside>
+
+          <section className={`${styles.panel} ${styles.settingsMain}`}>
+            <div className={styles.panelHeader}>
+              <div><h2 className={styles.panelTitle}>请求并发上限</h2><p className={styles.panelDescription}>输入 1 到 100 之间的整数，保存后由服务端立即应用。</p></div>
+              <span className={`${styles.badge} ${capacityTone}`}>{formatQuantity(activeRequests, 0)} / {formatQuantity(savedLimit, 0)} 使用中</span>
+            </div>
+            <div className={styles.panelBody}>
+              <form className={styles.settingsForm} onSubmit={saveConcurrencySettings}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>最大并发请求数 <span className={styles.fieldHint}>范围 1-100</span></span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    inputMode="numeric"
+                    value={concurrencyLimit}
+                    onChange={(event) => updateLimit(event.target.value)}
+                  />
+                </label>
+
+                <div className={styles.billingMultiplierRow}>
+                  <span>快捷设置</span>
+                  <div className={styles.segmented} role="group" aria-label="快速选择最大并发请求数">
+                    {[1, 2, 4, 8].map((value) => (
+                      <button
+                        className={`${styles.segmentedButton} ${inputValue === value ? styles.segmentedButtonActive : ''}`}
+                        type="button"
+                        key={value}
+                        aria-pressed={inputValue === value}
+                        onClick={() => updateLimit(String(value))}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={styles.buttonRow}>
+                  <button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={concurrencySaving || !validInput}>
+                    <Check size={15} />{concurrencySaving ? '保存中…' : '保存并发上限'}
+                  </button>
+                  <span className={styles.billingSavedAt}>更新：{formatDate(concurrencyStatus?.settings.updatedAt)}</span>
+                </div>
+              </form>
+
+              <div className={styles.billingResults}>
+                <div className={styles.billingResultsHeader}>
+                  <div><strong>实时占用</strong><span>活动请求 / 当前上限</span></div>
+                  <span className={`${styles.badge} ${capacityTone}`}>{utilization}%</span>
+                </div>
+                <div
+                  className={styles.progressTrack}
+                  role="progressbar"
+                  aria-label="并发占用比例"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={utilization}
+                >
+                  <div className={styles.progressFill} style={{ width: `${utilization}%` }} />
+                </div>
+              </div>
+
+              <div className={styles.helpBox}>
+                <div className={styles.helpTitle}>生效范围</div>
+                <div className={styles.helpText}>此上限统一控制音乐生成、续写、歌词和分轨等生成类请求。活动数和可用槽位会随后台刷新自动更新。</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   function renderBilling() {
     const preview = billingPreview;
     const multiplierBelowCost = preview.valid && preview.rateMultiplier < 1;
@@ -1979,6 +2167,7 @@ export default function AdminDashboard() {
         {message && <div className={`${styles.notice} ${styles.noticeInfo}`}><Check size={16} />{message}</div>}
         {activeView === 'overview' && renderOverview()}
         {activeView === 'accounts' && renderAccounts()}
+        {activeView === 'concurrency' && renderConcurrency()}
         {activeView === 'generate' && renderGenerate()}
         {activeView === 'tasks' && renderTasks()}
         {activeView === 'apikey' && renderApiKey()}

@@ -6,6 +6,8 @@ import { audioToText, promptFromResponseInput, tokenEstimate } from '@/lib/opena
 import { resolveOpenAIModel } from '@/lib/suno-models';
 import { corsHeaders } from '@/lib/utils';
 import { requireApiKey } from '@/lib/api-auth';
+import { withGenerationConcurrency } from '@/lib/concurrency-settings';
+import { concurrencyLimitResponse } from '@/lib/concurrency-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +21,10 @@ export async function POST(request: NextRequest) {
 
   const model = resolveOpenAIModel(body.model);
   try {
-    const audios = await withSunoAccount(accountTier(body.pool || request.headers.get('x-suno-pool')), (api) => api.generate(prompt, true, model, true));
+    const audios = await withGenerationConcurrency(() => withSunoAccount(
+      accountTier(body.pool || request.headers.get('x-suno-pool')),
+      (api) => api.generate(prompt, true, model, true),
+    ));
     const outputText = audioToText(audios);
     const promptTokens = tokenEstimate(prompt);
     const completionTokens = tokenEstimate(outputText);
@@ -42,6 +47,8 @@ export async function POST(request: NextRequest) {
     }, { headers: corsHeaders });
   } catch (error: any) {
     console.error('OpenAI response error:', error);
+    const limited = concurrencyLimitResponse(error, corsHeaders);
+    if (limited) return limited;
     return NextResponse.json({ error: { message: error?.response?.data?.detail || error?.message || 'Music generation failed.', type: 'api_error' } }, { status: error?.response?.status || 502, headers: corsHeaders });
   }
 }

@@ -2,7 +2,7 @@
 
 基于 [gcui-art/suno-api](https://github.com/gcui-art/suno-api) 的增强版 Suno 音乐生成 API。
 
-本仓库在原项目基础上增加了：**后台管理、多账号池、OpenAI 兼容接口鉴权、积分与倍率计费、YesCaptcha / 2Captcha、Cookie 自动提取与浏览器插件**。
+本仓库在原项目基础上增加了：**后台管理、多账号池、全局生成并发控制、OpenAI 兼容接口鉴权、积分与倍率计费、YesCaptcha / 2Captcha、Cookie 自动提取与浏览器插件**。
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
@@ -13,6 +13,7 @@
 - **Suno 音乐 API**：生成 / 自定义模式 / 续写 / 歌词 / 分轨
 - **管理后台 `/admin`**：账号池、网页生成、验证码配置、接口密钥、积分与倍率、歌曲列表
 - **多账号池**：`basic` / `super` / `heavy` 分级，自动负载均衡与积分同步
+- **全局生成并发**：统一限制生成请求，并显示当前占用与可用槽位
 - **OpenAI 兼容接口**
   - `GET /v1/models`
   - `GET /v1/billing`
@@ -140,6 +141,7 @@ npm run verify-cookie
 |---|---|
 | 概览 | 积分、状态总览 |
 | 账号池 | 多账号添加 / 校验 / 刷新配额 |
+| 并发限制 | 配置全局生成请求上限并查看实时槽位 |
 | 生成 | 网页端生成音乐 |
 | 验证码 | YesCaptcha / 2Captcha 密钥与模式 |
 | 接口密钥 | 配置 `/v1/*` 访问密钥 |
@@ -303,6 +305,59 @@ curl "$SUNO_BASE_URL/sub2api/billing" \
   `purchasedCredits`、`creditsPerGeneration`、`outputsPerGeneration`、
   `rateMultiplier`、`cnyPerUsd`
 
+### 全局生成并发
+
+系统默认最多同时执行 `4` 个生成请求。后台设置字段
+`maxConcurrentRequests` 只接受 `1-100` 的整数，保存后立即生效；全局限制与
+每个账号自身的并发上限同时生效。
+
+以下 9 个生成入口共享同一个全局并发容量：
+
+- `POST /api/generate`
+- `POST /api/custom_generate`
+- `POST /api/extend_audio`
+- `POST /api/generate_stems`
+- `POST /api/generate_lyrics`
+- `POST /api/concat`
+- `POST /api/admin/generate`
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+
+模型、计费、积分、任务和歌曲查询等只读接口不占用生成槽位。所有槽位被占用时，
+新的生成请求立即返回 HTTP `429`，错误码为
+`concurrency_limit_exceeded`，不会在服务器内无限排队。
+
+管理接口需要已登录后台的 `suno_admin_session` Cookie：
+
+- `GET /api/admin/concurrency`：返回 `settings`、`activeRequests`、`availableSlots`
+- `PUT /api/admin/concurrency`：保存 `maxConcurrentRequests`（`1-100`）并返回更新后的状态
+
+更新示例：
+
+```bash
+curl -X PUT "https://<你的域名>/api/admin/concurrency" \
+  -H "Content-Type: application/json" \
+  -H "Cookie: suno_admin_session=<会话>" \
+  -d '{"maxConcurrentRequests":4}'
+```
+
+9 个受控生成入口统一返回：
+
+```json
+{
+  "error": {
+    "message": "Global generation concurrency limit exceeded.",
+    "type": "rate_limit_error",
+    "code": "concurrency_limit_exceeded",
+    "limit": 4,
+    "active_requests": 4,
+    "retry_after": 5
+  }
+}
+```
+
+响应头同时包含 `Retry-After: 5`。
+
 ---
 
 ## 原生接口
@@ -319,6 +374,7 @@ Swagger：`/docs`
 - `GET /api/get_limit`
 - `GET /v1/billing`（API Key 鉴权启用时需要鉴权）
 - `GET /api/admin/billing`、`PUT /api/admin/billing`（后台会话鉴权）
+- `GET /api/admin/concurrency`、`PUT /api/admin/concurrency`（后台会话鉴权）
 
 ---
 

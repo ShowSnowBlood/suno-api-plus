@@ -1,6 +1,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { cookies } from 'next/headers'
 import { DEFAULT_MODEL, sunoApi } from "@/lib/SunoApi";
+import { withGenerationConcurrency } from '@/lib/concurrency-settings';
+import { concurrencyLimitResponse } from '@/lib/concurrency-response';
 import { corsHeaders } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +23,18 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const audioInfo = await (await sunoApi((await cookies()).toString()))
-        .extendAudio(audio_id, prompt, continue_at, tags || '', negative_tags || '', title, model || DEFAULT_MODEL, wait_audio || false);
+      const audioInfo = await withGenerationConcurrency(async () => (
+        await sunoApi((await cookies()).toString())
+      ).extendAudio(
+        audio_id,
+        prompt,
+        continue_at,
+        tags || '',
+        negative_tags || '',
+        title,
+        model || DEFAULT_MODEL,
+        wait_audio || false,
+      ));
 
       return new NextResponse(JSON.stringify(audioInfo), {
         status: 200,
@@ -33,7 +45,9 @@ export async function POST(req: NextRequest) {
       });
     } catch (error: any) {
       console.error('Error extend audio:', error);
-      
+      const limited = concurrencyLimitResponse(error, corsHeaders);
+      if (limited) return limited;
+
       // Handle different types of errors
       if (error.response) {
         // Axios error with response
