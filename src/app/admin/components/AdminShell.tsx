@@ -5,6 +5,7 @@ import {
   Activity,
   BookOpen,
   Boxes,
+  Calculator,
   Check,
   ChevronRight,
   Copy,
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react';
 import styles from './AdminShell.module.css';
 
-export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'captcha' | 'apikey' | 'models';
+export type AdminView = 'overview' | 'generate' | 'tasks' | 'accounts' | 'captcha' | 'apikey' | 'billing' | 'models';
 
 export interface AdminShellProps {
   activeView: AdminView;
@@ -77,6 +78,10 @@ const navGroups: NavGroup[] = [
       { view: 'apikey', label: '接口密钥', icon: KeyRound },
     ],
   },
+  {
+    label: '计费管理',
+    items: [{ view: 'billing', label: '积分与倍率', icon: Calculator }],
+  },
 ];
 
 const viewMeta: Record<AdminView, { section: string; title: string; description: string }> = {
@@ -86,6 +91,7 @@ const viewMeta: Record<AdminView, { section: string; title: string; description:
   accounts: { section: '账号资源', title: '账号池', description: '维护分级账号、并发与配额' },
   captcha: { section: '安全与接入', title: '验证码配置', description: '管理验证服务与故障切换' },
   apikey: { section: '安全与接入', title: '接口密钥', description: '管理 OpenAI 兼容接口访问' },
+  billing: { section: '计费管理', title: '积分与倍率', description: '计算固定请求价与积分扣除' },
   models: { section: '开发者', title: '模型目录', description: '查看可发现的模型与上游映射' },
 };
 

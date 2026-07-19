@@ -2,7 +2,7 @@
 
 Enhanced fork of [gcui-art/suno-api](https://github.com/gcui-art/suno-api).
 
-Adds an **admin dashboard**, **multi-account pool**, **OpenAI-compatible endpoints with API key auth**, **YesCaptcha / 2Captcha**, and **cookie extraction tools**.
+Adds an **admin dashboard**, **multi-account pool**, **OpenAI-compatible endpoints with API key auth**, **credit and multiplier billing**, **YesCaptcha / 2Captcha**, and **cookie extraction tools**.
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
@@ -11,12 +11,14 @@ Adds an **admin dashboard**, **multi-account pool**, **OpenAI-compatible endpoin
 ## Features
 
 - Suno music generation APIs (generate, custom mode, extend, lyrics, stems)
-- Admin panel at `/admin` (accounts, generate, captcha, API key, songs)
+- Admin panel at `/admin` (accounts, generate, captcha, API key, billing, songs)
 - Multi-account pool with `basic` / `super` / `heavy` tiers and quota sync
 - OpenAI-compatible endpoints:
   - `GET /v1/models`
+  - `GET /v1/billing`
   - `POST /v1/chat/completions`
   - `POST /v1/responses`
+- Credit and multiplier billing based on package cost, upstream credits, request usage, and group multiplier
 - API key auth: `Authorization: Bearer <API_KEY>` (manage in admin UI)
 - Captcha providers: YesCaptcha and 2Captcha (token-first)
 - Cookie tools:
@@ -144,6 +146,7 @@ URL: `/admin`
 | Generate | Web music generation |
 | Captcha | YesCaptcha / 2Captcha settings |
 | API Key | OpenAI-compatible key management |
+| Credits & multiplier | Cost, credits, request usage, output count, billing multiplier, and balance conversion |
 
 Account tiers: `basic` / `super` / `heavy`.
 
@@ -234,12 +237,58 @@ public `suno-*` IDs above are recommended for downstream integrations.
 | Base URL | `https://suno.38-47-121-78.sslip.io/v1` |
 | API Key | your configured key |
 | Model | `suno-music` |
+| `billing_mode` | `per_request` |
+| `per_request_price` | `0.48` with the defaults below |
+| Group `rate_multiplier` | `1` by default |
 
 Optional pool header:
 
 ```http
 x-suno-pool: basic|super|heavy
 ```
+
+### Credit and multiplier billing
+
+Admin → Credits & multiplier starts with these defaults:
+
+| Setting | Default |
+|---|---:|
+| Package cost | CNY `120` |
+| Upstream package credits | `2500` |
+| Credits consumed per generation | `10` |
+| Outputs per generation | `2` songs |
+| Billing multiplier | `1` |
+| Balance conversion | CNY `1` = `1` USD balance unit |
+
+The default calculation is:
+
+- Cost per upstream credit: `120 / 2500 = CNY 0.048`
+- Cost per generation: `0.048 × 10 = CNY 0.48`
+- Cost per song: `0.48 / 2 = CNY 0.24`
+- Package capacity: `2500 / 10 = 250` generations and `500` songs
+- At multiplier `1`: deduct `10` billing credits per generation, or `5` per song
+- At multiplier `1`: `2500` total billable credits, reference value `120`, and `0%` gross margin
+- Sub2API: `billing_mode=per_request`, `per_request_price=0.48`, group `rate_multiplier=1`
+
+`per_request_price` is the base request cost converted to the downstream balance
+unit. Sub2API's effective request charge is `per_request_price × rate_multiplier`.
+For example, multiplier `1.5` deducts `15` billing credits per generation and
+charges `0.72` USD balance units with the default conversion.
+
+Saved settings take effect immediately without a restart and are stored in
+`./data/billing-settings.json` (the directory follows `ACCOUNT_DATA_PATH`). A
+downstream client can read the active settings and calculated summary:
+
+```bash
+curl "$SUNO_BASE_URL/billing" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+The admin API uses the signed-in `suno_admin_session` cookie:
+
+- `GET /api/admin/billing`: read settings and the calculated summary
+- `PUT /api/admin/billing`: save `purchaseCostCny`, `purchasedCredits`,
+  `creditsPerGeneration`, `outputsPerGeneration`, `rateMultiplier`, and `cnyPerUsd`
 
 ---
 
@@ -253,6 +302,8 @@ Swagger UI: `/docs`
 - `POST /api/generate_lyrics`
 - `GET /api/get?ids=...`
 - `GET /api/get_limit`
+- `GET /v1/billing` (API key protected when API auth is enabled)
+- `GET /api/admin/billing`, `PUT /api/admin/billing` (admin session required)
 
 ---
 
@@ -275,7 +326,7 @@ Swagger UI: `/docs`
 | `BROWSER_HEADLESS` | No | Default `true` |
 | `BROWSER_DISABLE_GPU` | No | `true` for Docker |
 
-Captcha / API key can also be saved from Admin UI under `./data/`.
+Captcha, API key, and billing settings can also be saved from Admin UI under `./data/`.
 
 ---
 

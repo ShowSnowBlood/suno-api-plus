@@ -2763,6 +2763,105 @@ a.navButton {
   gap: 12px;
 }
 
+.billingMultiplierRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.billingMultiplierRow > span {
+  color: #64786f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.billingSavedAt {
+  align-self: center;
+  color: #83928c;
+  font-size: 10px;
+}
+
+.billingResults {
+  margin-top: 20px;
+  padding-top: 17px;
+  border-top: 1px solid #e7eeeb;
+}
+
+.billingResultsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.billingResultsHeader > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.billingResultsHeader strong {
+  color: #405a50;
+  font-size: 12px;
+}
+
+.billingResultsHeader span:not(.badge) {
+  color: #87958f;
+  font-size: 10px;
+}
+
+.billingMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  padding: 1px;
+  border-radius: 7px;
+  background: #dce7e3;
+}
+
+.billingMetric {
+  display: flex;
+  min-width: 0;
+  min-height: 96px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 13px;
+  background: #ffffff;
+}
+
+.billingMetric span {
+  color: #71847b;
+  font-size: 10px;
+}
+
+.billingMetric strong {
+  margin-top: 7px;
+  overflow: hidden;
+  color: #304a40;
+  font-size: 17px;
+  font-weight: 730;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.billingMetric small {
+  margin-top: 5px;
+  overflow: hidden;
+  color: #8a9892;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.billingWarningText {
+  color: #a56d18 !important;
+}
+
 .readonlyValue {
   min-height: 38px;
   border: 1px solid #d8e4df;
@@ -3030,6 +3129,10 @@ a.navButton {
   .settingsStatusList {
     margin-top: 4px;
   }
+
+  .billingMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -3183,6 +3286,20 @@ a.navButton {
     grid-template-columns: 1fr;
   }
 
+  .billingMultiplierRow,
+  .billingResultsHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .billingMultiplierRow .segmented {
+    width: 100%;
+  }
+
+  .billingMultiplierRow .segmentedButton {
+    flex: 1;
+  }
+
   .pagination {
     align-items: flex-start;
     flex-direction: column;
@@ -3227,6 +3344,10 @@ a.navButton {
 
   .secretValueRow .button {
     width: 100%;
+  }
+
+  .billingMetricGrid {
+    grid-template-columns: 1fr;
   }
 }
 

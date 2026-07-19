@@ -1,11 +1,12 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
   ArrowRight,
   Boxes,
+  Calculator,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -102,7 +103,22 @@ type ApiKeyStatus = {
   updatedAt?: string;
 };
 
-type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey' | 'models';
+type BillingSettings = {
+  purchaseCostCny: number;
+  purchasedCredits: number;
+  creditsPerGeneration: number;
+  outputsPerGeneration: number;
+  rateMultiplier: number;
+  cnyPerUsd: number;
+  updatedAt?: string;
+};
+
+type BillingForm = Record<
+  'purchaseCostCny' | 'purchasedCredits' | 'creditsPerGeneration' | 'outputsPerGeneration' | 'rateMultiplier' | 'cnyPerUsd',
+  string
+>;
+
+type View = 'overview' | 'accounts' | 'generate' | 'tasks' | 'captcha' | 'apikey' | 'billing' | 'models';
 type PoolFilter = 'all' | 'basic' | 'super' | 'heavy';
 type AccountStatusFilter = 'all' | PoolAccount['status'];
 type TaskFilter = 'all' | 'active' | 'complete' | 'error';
@@ -143,6 +159,39 @@ const modelDescriptions: Record<string, string> = {
 };
 
 const TASKS_PER_PAGE = 8;
+
+const DEFAULT_BILLING_FORM: BillingForm = {
+  purchaseCostCny: '120',
+  purchasedCredits: '2500',
+  creditsPerGeneration: '10',
+  outputsPerGeneration: '2',
+  rateMultiplier: '1',
+  cnyPerUsd: '1',
+};
+
+function toBillingForm(settings?: Partial<BillingSettings> | null): BillingForm {
+  return {
+    purchaseCostCny: String(settings?.purchaseCostCny ?? DEFAULT_BILLING_FORM.purchaseCostCny),
+    purchasedCredits: String(settings?.purchasedCredits ?? DEFAULT_BILLING_FORM.purchasedCredits),
+    creditsPerGeneration: String(settings?.creditsPerGeneration ?? DEFAULT_BILLING_FORM.creditsPerGeneration),
+    outputsPerGeneration: String(settings?.outputsPerGeneration ?? DEFAULT_BILLING_FORM.outputsPerGeneration),
+    rateMultiplier: String(settings?.rateMultiplier ?? DEFAULT_BILLING_FORM.rateMultiplier),
+    cnyPerUsd: String(settings?.cnyPerUsd ?? DEFAULT_BILLING_FORM.cnyPerUsd),
+  };
+}
+
+function formatMoney(value: number, symbol = '¥', maximumFractionDigits = 4) {
+  if (!Number.isFinite(value)) return '--';
+  return `${symbol}${new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits,
+  }).format(value)}`;
+}
+
+function formatQuantity(value: number, maximumFractionDigits = 2) {
+  if (!Number.isFinite(value)) return '--';
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits }).format(value);
+}
 
 function formatDate(value?: string | null) {
   if (!value) return '暂无记录';
@@ -233,7 +282,11 @@ export default function AdminDashboard() {
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyPlain, setApiKeyPlain] = useState('');
-
+  const [billingForm, setBillingForm] = useState<BillingForm>(DEFAULT_BILLING_FORM);
+  const [billingUpdatedAt, setBillingUpdatedAt] = useState<string | undefined>();
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingSaving, setBillingSaving] = useState(false);
+  const billingDirtyRef = useRef(false);
   const [captchaForm, setCaptchaForm] = useState({
     provider: 'auto' as 'auto' | 'yescaptcha' | '2captcha',
     captchaMode: 'auto' as 'auto' | 'token' | 'click',
@@ -243,6 +296,70 @@ export default function AdminDashboard() {
     showYesKey: false,
     showTwoKey: false,
   });
+
+  const billingPreview = useMemo(() => {
+    const purchaseCostCny = Number(billingForm.purchaseCostCny);
+    const purchasedCredits = Number(billingForm.purchasedCredits);
+    const creditsPerGeneration = Number(billingForm.creditsPerGeneration);
+    const outputsPerGeneration = Number(billingForm.outputsPerGeneration);
+    const rateMultiplier = Number(billingForm.rateMultiplier);
+    const cnyPerUsd = Number(billingForm.cnyPerUsd);
+    const values = [
+      purchaseCostCny,
+      purchasedCredits,
+      creditsPerGeneration,
+      outputsPerGeneration,
+      rateMultiplier,
+      cnyPerUsd,
+    ];
+    const valid = values.every((value) => Number.isFinite(value) && value > 0);
+    if (!valid) {
+      return {
+        valid: false,
+        costPerCreditCny: 0,
+        costPerGenerationCny: 0,
+        costPerOutputCny: 0,
+        billingPointsPerGeneration: 0,
+        billingPointsPerOutput: 0,
+        totalBillablePoints: 0,
+        generationsPerPackage: 0,
+        outputsPerPackage: 0,
+        referencePackageValueCny: 0,
+        referenceGenerationValueCny: 0,
+        grossMarginPercent: 0,
+        sub2apiPerRequestPriceUsd: 0,
+        sub2apiEffectivePriceUsd: 0,
+        rateMultiplier,
+        outputsPerGeneration,
+      };
+    }
+
+    const costPerCreditCny = purchaseCostCny / purchasedCredits;
+    const costPerGenerationCny = costPerCreditCny * creditsPerGeneration;
+    const costPerOutputCny = costPerGenerationCny / outputsPerGeneration;
+    const generationsPerPackage = Math.floor(purchasedCredits / creditsPerGeneration);
+    const referencePackageValueCny = purchaseCostCny * rateMultiplier;
+    const referenceGenerationValueCny = costPerGenerationCny * rateMultiplier;
+
+    return {
+      valid: true,
+      costPerCreditCny,
+      costPerGenerationCny,
+      costPerOutputCny,
+      billingPointsPerGeneration: creditsPerGeneration * rateMultiplier,
+      billingPointsPerOutput: (creditsPerGeneration * rateMultiplier) / outputsPerGeneration,
+      totalBillablePoints: purchasedCredits * rateMultiplier,
+      generationsPerPackage,
+      outputsPerPackage: generationsPerPackage * outputsPerGeneration,
+      referencePackageValueCny,
+      referenceGenerationValueCny,
+      grossMarginPercent: ((referencePackageValueCny - purchaseCostCny) / referencePackageValueCny) * 100,
+      sub2apiPerRequestPriceUsd: costPerGenerationCny / cnyPerUsd,
+      sub2apiEffectivePriceUsd: referenceGenerationValueCny / cnyPerUsd,
+      rateMultiplier,
+      outputsPerGeneration,
+    };
+  }, [billingForm]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -254,7 +371,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey', 'models'];
+    const views: View[] = ['overview', 'accounts', 'generate', 'tasks', 'captcha', 'apikey', 'billing', 'models'];
     const syncFromLocation = () => {
       const requestedView = window.location.hash.replace(/^#/, '') as View;
       if (views.includes(requestedView)) setActiveView(requestedView);
@@ -281,18 +398,20 @@ export default function AdminDashboard() {
     setRefreshing(true);
     setError('');
     try {
-      const [limitResponse, songsResponse, accountsResponse, captchaResponse, apiKeyResponse] = await Promise.all([
+      const [limitResponse, songsResponse, accountsResponse, captchaResponse, apiKeyResponse, billingResponse] = await Promise.all([
         fetch('/api/admin/limit', { cache: 'no-store' }),
         fetch('/api/admin/songs', { cache: 'no-store' }),
         fetch('/api/admin/accounts', { cache: 'no-store' }),
         fetch('/api/admin/captcha', { cache: 'no-store' }),
         fetch('/api/admin/apikey', { cache: 'no-store' }),
+        fetch('/api/admin/billing', { cache: 'no-store' }),
       ]);
       const limitData = await limitResponse.json();
       const songsData = await songsResponse.json();
       const accountsData = await accountsResponse.json();
       const captchaData = await captchaResponse.json();
       const apiKeyData = await apiKeyResponse.json();
+      const billingData = await billingResponse.json();
       const errors: string[] = [];
       if (limitResponse.ok) setQuota(limitData);
       else errors.push(limitData.error || '积分信息暂时无法读取。');
@@ -323,6 +442,15 @@ export default function AdminDashboard() {
         }));
       } else {
         errors.push(apiKeyData.error || '接口密钥配置暂时无法读取。');
+      }
+
+      if (billingResponse.ok) {
+        if (!billingDirtyRef.current) {
+          setBillingForm(toBillingForm(billingData.settings));
+          setBillingUpdatedAt(billingData.settings?.updatedAt);
+        }
+      } else {
+        errors.push(billingData.error || '计费配置暂时无法读取。');
       }
       if (errors.length > 0) setError(Array.from(new Set(errors)).join(' '));
       setLastUpdated(new Date().toISOString());
@@ -1298,6 +1426,7 @@ export default function AdminDashboard() {
                 <div><span>接口地址</span><code>{apiEndpoint}</code></div>
                 <div><span>生成模型</span><code>{generationModel}</code></div>
                 <div><span>当前账号</span><strong>{activeAccounts} 个可用</strong></div>
+                <div><span>预计计费</span><strong>{billingPreview.valid ? `${formatQuantity(billingPreview.billingPointsPerGeneration)} 积分 / ${formatQuantity(billingPreview.outputsPerGeneration, 0)} 首` : '--'}</strong></div>
                 <div><span>自动刷新</span><strong>每 15 秒</strong></div>
               </div>
             </section>
@@ -1573,6 +1702,171 @@ export default function AdminDashboard() {
     }
   }
 
+  async function refreshBillingSettings() {
+    setBillingLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/billing', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '读取计费配置失败');
+      setBillingForm(toBillingForm(data.settings));
+      setBillingUpdatedAt(data.settings?.updatedAt);
+      billingDirtyRef.current = false;
+      setMessage('计费配置已刷新');
+    } catch (err: any) {
+      setError(err?.message || '读取计费配置失败');
+    } finally {
+      setBillingLoading(false);
+    }
+  }
+
+  async function saveBillingSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!billingPreview.valid) {
+      setError('计费参数必须全部为大于 0 的数字。');
+      return;
+    }
+
+    setBillingSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch('/api/admin/billing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          purchaseCostCny: Number(billingForm.purchaseCostCny),
+          purchasedCredits: Number(billingForm.purchasedCredits),
+          creditsPerGeneration: Number(billingForm.creditsPerGeneration),
+          outputsPerGeneration: Number(billingForm.outputsPerGeneration),
+          rateMultiplier: Number(billingForm.rateMultiplier),
+          cnyPerUsd: Number(billingForm.cnyPerUsd),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '保存计费配置失败');
+      setBillingForm(toBillingForm(data.settings));
+      setBillingUpdatedAt(data.settings?.updatedAt);
+      billingDirtyRef.current = false;
+      setMessage(data.message || '计费配置已保存');
+    } catch (err: any) {
+      setError(err?.message || '保存计费配置失败');
+    } finally {
+      setBillingSaving(false);
+    }
+  }
+
+  function renderBilling() {
+    const preview = billingPreview;
+    const multiplierBelowCost = preview.valid && preview.rateMultiplier < 1;
+    const updateField = (field: keyof BillingForm, value: string) => {
+      billingDirtyRef.current = true;
+      setBillingForm((current) => ({ ...current, [field]: value }));
+    };
+
+    return (
+      <>
+        {renderPageHeader(
+          '计费设置',
+          '按购入成本和上游积分计算固定请求价、积分扣除与分组倍率。',
+          <button className={styles.button} type="button" onClick={refreshBillingSettings} disabled={billingLoading}>
+            <RefreshCw size={14} className={billingLoading ? styles.spin : undefined} />
+            {billingLoading ? '刷新中…' : '刷新配置'}
+          </button>,
+        )}
+        <div className={styles.settingsLayout}>
+          <aside className={styles.settingsSummary}>
+            <div className={styles.settingsSummaryIcon}><Calculator size={19} /></div>
+            <h2>当前计费基准</h2>
+            <p>按固定上游积分计算每次请求成本与下游扣分。</p>
+            <div className={styles.settingsStatusList}>
+              <div className={styles.settingsStatusRow}><span>购入成本</span><strong>{preview.valid ? formatMoney(Number(billingForm.purchaseCostCny), '¥', 2) : '--'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>购入积分</span><strong>{preview.valid ? formatQuantity(Number(billingForm.purchasedCredits)) : '--'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>单次实际成本</span><strong>{preview.valid ? formatMoney(preview.costPerGenerationCny, '¥', 4) : '--'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>计费倍率</span><strong className={multiplierBelowCost ? styles.textWarning : styles.textSuccess}>{preview.valid ? `${formatQuantity(preview.rateMultiplier)}x` : '--'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>单次扣除</span><strong>{preview.valid ? `${formatQuantity(preview.billingPointsPerGeneration)} 积分` : '--'}</strong></div>
+              <div className={styles.settingsStatusRow}><span>整包产能</span><strong>{preview.valid ? `${formatQuantity(preview.generationsPerPackage, 0)} 次 / ${formatQuantity(preview.outputsPerPackage, 0)} 首` : '--'}</strong></div>
+            </div>
+            <p className={`${styles.settingsHint} ${multiplierBelowCost ? styles.billingWarningText : ''}`}>
+              {multiplierBelowCost
+                ? '当前倍率低于 1.0，倍率后参考收入低于成本基准。'
+                : `倍率后整包参考合计 ${preview.valid ? formatMoney(preview.referencePackageValueCny, '¥', 2) : '--'}。`}
+            </p>
+          </aside>
+
+          <section className={`${styles.panel} ${styles.settingsMain}`}>
+            <div className={styles.panelHeader}>
+              <div><h2 className={styles.panelTitle}>积分与倍率</h2><p className={styles.panelDescription}>保存后写入服务器，前端计算结果会同步更新。</p></div>
+              <span className={`${styles.badge} ${multiplierBelowCost ? styles.badgeAmber : styles.badgeGreen}`}>{preview.valid ? `${formatQuantity(preview.billingPointsPerGeneration)} 积分 / 次` : '参数不完整'}</span>
+            </div>
+            <div className={styles.panelBody}>
+              <form className={styles.settingsForm} onSubmit={saveBillingSettings}>
+                <div className={styles.formGridTwo}>
+                  <label className={styles.field}><span className={styles.fieldLabel}>购入成本（元）</span><input className={styles.input} type="number" min="0.01" step="0.01" value={billingForm.purchaseCostCny} onChange={(event) => updateField('purchaseCostCny', event.target.value)} /></label>
+                  <label className={styles.field}><span className={styles.fieldLabel}>购入上游积分</span><input className={styles.input} type="number" min="1" step="1" value={billingForm.purchasedCredits} onChange={(event) => updateField('purchasedCredits', event.target.value)} /></label>
+                  <label className={styles.field}><span className={styles.fieldLabel}>每次消耗积分</span><input className={styles.input} type="number" min="0.01" step="0.01" value={billingForm.creditsPerGeneration} onChange={(event) => updateField('creditsPerGeneration', event.target.value)} /></label>
+                  <label className={styles.field}><span className={styles.fieldLabel}>每次产出歌曲</span><input className={styles.input} type="number" min="1" step="1" value={billingForm.outputsPerGeneration} onChange={(event) => updateField('outputsPerGeneration', event.target.value)} /></label>
+                  <label className={styles.field}><span className={styles.fieldLabel}>分组计费倍率</span><input className={styles.input} type="number" min="0.01" step="0.05" value={billingForm.rateMultiplier} onChange={(event) => updateField('rateMultiplier', event.target.value)} /></label>
+                  <label className={styles.field}><span className={styles.fieldLabel}>余额换算比例（当前 1:1）</span><input className={styles.input} type="number" min="0.01" step="0.01" value={billingForm.cnyPerUsd} onChange={(event) => updateField('cnyPerUsd', event.target.value)} /></label>
+                </div>
+
+                <div className={styles.billingMultiplierRow}>
+                  <span>快速倍率</span>
+                  <div className={styles.segmented} role="group" aria-label="快速选择计费倍率">
+                    {[1, 1.2, 1.5, 2].map((value) => (
+                      <button
+                        className={`${styles.segmentedButton} ${Number(billingForm.rateMultiplier) === value ? styles.segmentedButtonActive : ''}`}
+                        type="button"
+                        key={value}
+                        onClick={() => updateField('rateMultiplier', String(value))}
+                      >
+                        {value.toFixed(1)}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={styles.buttonRow}>
+                  <button className={`${styles.button} ${styles.buttonPrimary}`} type="submit" disabled={billingSaving || !preview.valid}>
+                    <Check size={15} />{billingSaving ? '保存中…' : '保存计费设置'}
+                  </button>
+                  <span className={styles.billingSavedAt}>更新：{formatDate(billingUpdatedAt)}</span>
+                </div>
+              </form>
+
+              <div className={styles.billingResults}>
+                <div className={styles.billingResultsHeader}>
+                  <div><strong>实时计算</strong><span>按当前输入值预览</span></div>
+                  <span className={`${styles.badge} ${multiplierBelowCost ? styles.badgeAmber : styles.badgeBlue}`}>
+                    毛利率 {preview.valid ? `${formatQuantity(preview.grossMarginPercent, 1)}%` : '--'}
+                  </span>
+                </div>
+                <div className={styles.billingMetricGrid}>
+                  <div className={styles.billingMetric}><span>单积分成本</span><strong>{preview.valid ? formatMoney(preview.costPerCreditCny, '¥', 4) : '--'}</strong><small>{preview.valid ? `${formatQuantity(Number(billingForm.purchaseCostCny))} ÷ ${formatQuantity(Number(billingForm.purchasedCredits))}` : '--'}</small></div>
+                  <div className={styles.billingMetric}><span>单次实际成本</span><strong>{preview.valid ? formatMoney(preview.costPerGenerationCny, '¥', 4) : '--'}</strong><small>{formatQuantity(Number(billingForm.creditsPerGeneration))} 上游积分</small></div>
+                  <div className={styles.billingMetric}><span>每首实际成本</span><strong>{preview.valid ? formatMoney(preview.costPerOutputCny, '¥', 4) : '--'}</strong><small>{formatQuantity(preview.outputsPerGeneration, 0)} 首 / 次</small></div>
+                  <div className={styles.billingMetric}><span>倍率后单次积分</span><strong>{preview.valid ? formatQuantity(preview.billingPointsPerGeneration) : '--'}</strong><small>{preview.valid ? `${formatQuantity(preview.billingPointsPerOutput)} 积分 / 首` : '--'}</small></div>
+                  <div className={styles.billingMetric}><span>整包可售积分</span><strong>{preview.valid ? formatQuantity(preview.totalBillablePoints) : '--'}</strong><small>上游积分 × 倍率</small></div>
+                  <div className={styles.billingMetric}><span>倍率后单次参考价</span><strong>{preview.valid ? formatMoney(preview.referenceGenerationValueCny, '¥', 4) : '--'}</strong><small>实际成本 × 倍率</small></div>
+                  <div className={styles.billingMetric}><span>Sub2API 固定价</span><strong>{preview.valid ? formatMoney(preview.sub2apiPerRequestPriceUsd, '$', 6) : '--'}</strong><small>per_request_price</small></div>
+                  <div className={styles.billingMetric}><span>倍率后实际计费</span><strong>{preview.valid ? formatMoney(preview.sub2apiEffectivePriceUsd, '$', 6) : '--'}</strong><small>固定价 × 分组倍率</small></div>
+                </div>
+              </div>
+
+              <div className={styles.integrationNote}>
+                <strong>Sub2API 渠道计费</strong>
+                <div><span>billing_mode</span><code>per_request</code></div>
+                <div><span>per_request_price</span><code>{preview.valid ? preview.sub2apiPerRequestPriceUsd.toFixed(6) : '--'}</code></div>
+                <div><span>分组倍率</span><code>{preview.valid ? preview.rateMultiplier.toFixed(2) : '--'}</code></div>
+                <div><span>余额换算口径</span><code>1 美元余额单位 = {formatQuantity(Number(billingForm.cnyPerUsd))} 元成本</code></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   function renderApiKey() {
     const status = apiKeyStatus;
     return (
@@ -1689,6 +1983,7 @@ export default function AdminDashboard() {
         {activeView === 'tasks' && renderTasks()}
         {activeView === 'apikey' && renderApiKey()}
         {activeView === 'captcha' && renderCaptcha()}
+        {activeView === 'billing' && renderBilling()}
         {activeView === 'models' && renderModels()}
       </div>
       {renderAuthWizard()}

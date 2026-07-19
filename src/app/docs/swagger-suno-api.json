@@ -8,6 +8,12 @@
   "tags": [
     {
       "name": "default"
+    },
+    {
+      "name": "billing"
+    },
+    {
+      "name": "admin"
     }
   ],
   "paths": {
@@ -161,6 +167,62 @@
           "401": {
             "description": "API key required or invalid."
           }
+        }
+      }
+    },
+    "/v1/billing": {
+      "get": {
+        "summary": "Get active credit and multiplier billing settings.",
+        "description": "Returns persisted settings and calculated costs. API key authentication is required when enabled for /v1/*. Defaults: CNY 120 / 2500 credits, 10 credits and 2 songs per request, multiplier 1, and CNY 1 per USD balance unit. Results: CNY 0.048 per credit, CNY 0.48 per request, and CNY 0.24 per song.",
+        "tags": ["billing"],
+        "security": [{ "BearerAuth": [] }, { "ApiKeyAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Active billing settings and calculated summary.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/billing_public_response" } } }
+          },
+          "401": { "description": "API key required or invalid." },
+          "500": { "description": "Billing settings could not be loaded." }
+        }
+      }
+    },
+    "/api/admin/billing": {
+      "get": {
+        "summary": "Get billing settings for the admin panel.",
+        "description": "Requires a valid suno_admin_session cookie created by the admin login flow.",
+        "tags": ["admin", "billing"],
+        "security": [{ "AdminSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Active billing settings and calculated summary.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/billing_snapshot" } } }
+          },
+          "401": { "description": "Admin authentication required." },
+          "500": { "description": "Billing settings could not be loaded." }
+        }
+      },
+      "put": {
+        "summary": "Update billing settings.",
+        "description": "Persists positive numeric settings to billing-settings.json beside ACCOUNT_DATA_PATH and applies them immediately without a restart. Requires a valid suno_admin_session cookie.",
+        "tags": ["admin", "billing"],
+        "security": [{ "AdminSession": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/billing_settings_update" },
+              "example": { "purchaseCostCny": 120, "purchasedCredits": 2500, "creditsPerGeneration": 10, "outputsPerGeneration": 2, "rateMultiplier": 1, "cnyPerUsd": 1 }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Billing settings saved and applied.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/billing_admin_save_response" } } }
+          },
+          "400": { "description": "A supplied setting is not a positive finite number." },
+          "401": { "description": "Admin authentication required." },
+          "500": { "description": "Billing settings could not be saved." }
         }
       }
     },
@@ -965,6 +1027,64 @@
         "title": "audio_info",
         "description": "Audio Info"
       },
+      "billing_settings": {
+        "type": "object",
+        "required": ["purchaseCostCny", "purchasedCredits", "creditsPerGeneration", "outputsPerGeneration", "rateMultiplier", "cnyPerUsd"],
+        "properties": {
+          "purchaseCostCny": { "type": "number", "example": 120, "description": "Package purchase cost in CNY." },
+          "purchasedCredits": { "type": "number", "example": 2500, "description": "Upstream credits included in the package." },
+          "creditsPerGeneration": { "type": "number", "example": 10, "description": "Upstream credits consumed by one generation request." },
+          "outputsPerGeneration": { "type": "number", "example": 2, "description": "Songs returned by one generation request." },
+          "rateMultiplier": { "type": "number", "example": 1, "description": "Billing/group multiplier applied to credits and effective request value." },
+          "cnyPerUsd": { "type": "number", "example": 1, "description": "CNY represented by one downstream USD balance unit." },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "billing_settings_update": {
+        "type": "object",
+        "description": "Every supplied value must be a positive finite number. Omitted fields keep their current values.",
+        "properties": {
+          "purchaseCostCny": { "type": "number", "example": 120 },
+          "purchasedCredits": { "type": "number", "example": 2500 },
+          "creditsPerGeneration": { "type": "number", "example": 10 },
+          "outputsPerGeneration": { "type": "number", "example": 2 },
+          "rateMultiplier": { "type": "number", "example": 1 },
+          "cnyPerUsd": { "type": "number", "example": 1 }
+        }
+      },
+      "billing_summary": {
+        "type": "object",
+        "required": ["costPerCreditCny", "costPerGenerationCny", "costPerOutputCny", "billingPointsPerGeneration", "totalBillablePoints", "generationsPerPackage", "outputsPerPackage", "referencePackageValueCny", "referenceGenerationValueCny", "grossMarginPercent", "sub2apiPerRequestPriceUsd", "sub2apiEffectivePriceUsd"],
+        "properties": {
+          "costPerCreditCny": { "type": "number", "example": 0.048 },
+          "costPerGenerationCny": { "type": "number", "example": 0.48 },
+          "costPerOutputCny": { "type": "number", "example": 0.24 },
+          "billingPointsPerGeneration": { "type": "number", "example": 10 },
+          "totalBillablePoints": { "type": "number", "example": 2500 },
+          "generationsPerPackage": { "type": "number", "example": 250 },
+          "outputsPerPackage": { "type": "number", "example": 500 },
+          "referencePackageValueCny": { "type": "number", "example": 120 },
+          "referenceGenerationValueCny": { "type": "number", "example": 0.48 },
+          "grossMarginPercent": { "type": "number", "example": 0 },
+          "sub2apiPerRequestPriceUsd": { "type": "number", "example": 0.48, "description": "Recommended Sub2API per_request_price before the group multiplier." },
+          "sub2apiEffectivePriceUsd": { "type": "number", "example": 0.48, "description": "Effective downstream request value after rateMultiplier." }
+        }
+      },
+      "billing_snapshot": {
+        "type": "object",
+        "required": ["settings", "summary"],
+        "properties": { "settings": { "$ref": "#/components/schemas/billing_settings" }, "summary": { "$ref": "#/components/schemas/billing_summary" } }
+      },
+      "billing_public_response": {
+        "type": "object",
+        "required": ["object", "settings", "summary"],
+        "properties": { "object": { "type": "string", "enum": ["billing_settings"] }, "settings": { "$ref": "#/components/schemas/billing_settings" }, "summary": { "$ref": "#/components/schemas/billing_summary" } }
+      },
+      "billing_admin_save_response": {
+        "type": "object",
+        "required": ["ok", "message", "settings", "summary"],
+        "properties": { "ok": { "type": "boolean", "example": true }, "message": { "type": "string" }, "settings": { "$ref": "#/components/schemas/billing_settings" }, "summary": { "$ref": "#/components/schemas/billing_summary" } }
+      },
       "model_list": {
         "type": "object",
         "required": ["object", "data"],
@@ -1024,6 +1144,11 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "API key" },
+      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "x-api-key" },
+      "AdminSession": { "type": "apiKey", "in": "cookie", "name": "suno_admin_session" }
     }
   }
 }

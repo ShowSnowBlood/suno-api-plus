@@ -2,7 +2,7 @@
 
 基于 [gcui-art/suno-api](https://github.com/gcui-art/suno-api) 的增强版 Suno 音乐生成 API。
 
-本仓库在原项目基础上增加了：**后台管理、多账号池、OpenAI 兼容接口鉴权、YesCaptcha / 2Captcha、Cookie 自动提取与浏览器插件**。
+本仓库在原项目基础上增加了：**后台管理、多账号池、OpenAI 兼容接口鉴权、积分与倍率计费、YesCaptcha / 2Captcha、Cookie 自动提取与浏览器插件**。
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
@@ -11,12 +11,14 @@
 ## 功能特性
 
 - **Suno 音乐 API**：生成 / 自定义模式 / 续写 / 歌词 / 分轨
-- **管理后台 `/admin`**：账号池、网页生成、验证码配置、接口密钥、歌曲列表
+- **管理后台 `/admin`**：账号池、网页生成、验证码配置、接口密钥、积分与倍率、歌曲列表
 - **多账号池**：`basic` / `super` / `heavy` 分级，自动负载均衡与积分同步
 - **OpenAI 兼容接口**
   - `GET /v1/models`
+  - `GET /v1/billing`
   - `POST /v1/chat/completions`
   - `POST /v1/responses`
+- **积分与倍率**：按套餐成本、上游积分、单次消耗与分组倍率计算固定请求价
 - **接口密钥**：`Authorization: Bearer <key>`，后台可生成 / 启停
 - **打码服务**：YesCaptcha、2Captcha（Token 优先）
 - **Cookie 获取**
@@ -141,6 +143,7 @@ npm run verify-cookie
 | 生成 | 网页端生成音乐 |
 | 验证码 | YesCaptcha / 2Captcha 密钥与模式 |
 | 接口密钥 | 配置 `/v1/*` 访问密钥 |
+| 积分与倍率 | 配置成本、积分、单次消耗、产出数量、计费倍率与余额换算 |
 | 接口文档 | 跳转 `/docs` |
 
 账号可设置池级别：`basic` / `super` / `heavy`。
@@ -233,12 +236,57 @@ curl "$SUNO_BASE_URL/models" \
 | API Base | `https://suno.38-47-121-78.sslip.io/v1` |
 | API Key | 后台「接口密钥」里生成的 key |
 | 模型 | `suno-music` |
+| `billing_mode` | `per_request` |
+| `per_request_price` | `0.48`（默认配置） |
+| 分组 `rate_multiplier` | `1`（默认配置） |
 
 可选池选择请求头：
 
 ```http
 x-suno-pool: basic
 ```
+
+### 积分与倍率计费
+
+后台「积分与倍率」默认按以下参数计算：
+
+| 参数 | 默认值 |
+|---|---:|
+| 套餐成本 | `120` 元 |
+| 套餐上游积分 | `2500` |
+| 每次生成消耗 | `10` 上游积分 |
+| 每次生成产出 | `2` 首 |
+| 计费倍率 | `1` |
+| 余额换算 | `1` 元 = `1` 美刀余额单位 |
+
+默认结果：
+
+- 单积分成本：`120 / 2500 = 0.048` 元
+- 单次生成成本：`0.048 × 10 = 0.48` 元
+- 每首成本：`0.48 / 2 = 0.24` 元
+- 整包可生成：`2500 / 10 = 250` 次，共 `500` 首
+- 倍率为 `1` 时：每次扣 `10` 积分，每首 `5` 积分
+- 倍率为 `1` 时：整包可售 `2500` 积分，参考价值 `120`，毛利率 `0%`
+- Sub2API：`billing_mode=per_request`、`per_request_price=0.48`、分组 `rate_multiplier=1`
+
+`per_request_price` 是按余额换算得到的基础单次成本；Sub2API 最终单次计费为
+`per_request_price × rate_multiplier`。例如倍率设为 `1.5` 时，每次扣 `15`
+积分，按默认余额口径对应 `0.72` 美刀余额单位。
+
+配置在后台保存后立即生效，无需重启，并写入 `./data/billing-settings.json`
+（实际目录跟随 `ACCOUNT_DATA_PATH`）。下游可读取当前配置：
+
+```bash
+curl "$SUNO_BASE_URL/billing" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+管理接口使用已登录后台的 `suno_admin_session` Cookie：
+
+- `GET /api/admin/billing`：读取计费设置与计算结果
+- `PUT /api/admin/billing`：保存设置，JSON 字段为 `purchaseCostCny`、
+  `purchasedCredits`、`creditsPerGeneration`、`outputsPerGeneration`、
+  `rateMultiplier`、`cnyPerUsd`
 
 ---
 
@@ -254,6 +302,8 @@ Swagger：`/docs`
 - `POST /api/generate_lyrics`
 - `GET /api/get?ids=...`
 - `GET /api/get_limit`
+- `GET /v1/billing`（API Key 鉴权启用时需要鉴权）
+- `GET /api/admin/billing`、`PUT /api/admin/billing`（后台会话鉴权）
 
 ---
 
@@ -276,7 +326,7 @@ Swagger：`/docs`
 | `BROWSER_HEADLESS` | 否 | 默认 true |
 | `BROWSER_DISABLE_GPU` | 否 | Docker 建议 true |
 
-验证码与接口密钥也可在后台保存，文件位于 `./data/`。
+验证码、接口密钥与积分倍率配置也可在后台保存，文件位于 `./data/`。
 
 ---
 
