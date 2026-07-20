@@ -1066,6 +1066,8 @@ a.navButton {
 
 .loginRoot,
 .checkingRoot {
+  --admin-border-strong: #d2dce8;
+  --admin-text: #26384d;
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -1895,8 +1897,8 @@ a.navButton {
   font-size: 13px;
 }
 
-.button,
-.dangerButton {
+.contentInner .button,
+.contentInner .dangerButton {
   min-height: 36px;
   border-color: var(--admin-border-strong);
   border-radius: 6px;
@@ -1904,19 +1906,19 @@ a.navButton {
   background: #ffffff;
 }
 
-.button:hover {
+.contentInner .button:hover {
   border-color: #a7c9c0;
   color: var(--admin-accent-strong);
   background: #f5faf8;
 }
 
-.buttonPrimary {
+.contentInner .buttonPrimary {
   border-color: var(--admin-accent);
   color: #ffffff;
   background: var(--admin-accent);
 }
 
-.buttonPrimary:hover {
+.contentInner .buttonPrimary:hover {
   border-color: var(--admin-accent-strong);
   color: #ffffff;
   background: var(--admin-accent-strong);
@@ -2391,7 +2393,7 @@ a.navButton {
   padding: 18px;
 }
 
-.fieldLabel {
+.contentInner .fieldLabel {
   color: #5f746a;
 }
 
@@ -2402,27 +2404,27 @@ a.navButton {
   font-weight: 500;
 }
 
-.input,
-.select,
-.textarea {
+.contentInner .input,
+.contentInner .select,
+.contentInner .textarea {
   border-color: var(--admin-border-strong);
   color: #30473e;
   background: #fbfdfc;
 }
 
-.input:focus,
-.select:focus,
-.textarea:focus {
+.contentInner .input:focus,
+.contentInner .select:focus,
+.contentInner .textarea:focus {
   border-color: #79aea3;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
 }
 
-.input::placeholder,
-.textarea::placeholder {
+.contentInner .input::placeholder,
+.contentInner .textarea::placeholder {
   color: #9aa8a2;
 }
 
-.checkbox {
+.contentInner .checkbox {
   accent-color: var(--admin-accent);
 }
 
